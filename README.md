@@ -11,9 +11,10 @@ It is built around the three questions of the field:
 | What does a trade cost? | Market impact (response function, propagator, square-root law), optimal execution (Almgren-Chriss, TWAP, VWAP, POV), transaction cost analysis |
 | What does quoting earn? | Market making (Avellaneda-Stoikov, Guéant-Lehalle-Fernandez-Tapia), markouts, a book-level backtest with latency and queue position |
 
-**Status: specification only.** There is no code yet. The reading companion and
-the work packages are written; the first work package (M0, the build skeleton)
-has not started.
+**Status: build skeleton only.** The toolchain, the tests, the benchmark
+harness, the wheel and the CI are in place (work package M0); there is no
+domain code yet. The next work package is M2, the order book and the matching
+engine.
 
 **This is a study repository, not a trading system.** It never connects to an
 exchange to send an order.
@@ -38,9 +39,17 @@ exchange to send an order.
 
 ## Build
 
-Not available yet: the build files arrive with work package M0. The intended
-toolchain is the one `quant-backtest` uses (CMake presets, Ninja, vcpkg,
-GoogleTest, google-benchmark, clang-format 18).
+Requires CMake 3.25+, Ninja, a C++20 compiler, and `VCPKG_ROOT` pointing at a
+vcpkg clone (dependencies are installed from `vcpkg.json` at configure time).
+
+| Command | Effect |
+|---|---|
+| `scripts/make.sh` | Configure, build into `build/`, run all tests |
+| `scripts/make_asan.sh` | Same with ASan and UBSan, into `build-asan/` |
+| `scripts/bench.sh` | Build and run the benchmarks (google-benchmark) |
+| `scripts/build_wheel.sh` | Build the `quantmicrostructure` wheel into `dist/` |
+| `pytest` | Python tests, against the wheel installed in the current environment |
+| `pre-commit run --all-files` | clang-format 18 and black |
 
 ## License
 
