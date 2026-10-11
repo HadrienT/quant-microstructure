@@ -376,3 +376,64 @@ voit que le meilleur prix, pas la profondeur ; le backtest n'est pas exposé à
 Python (une stratégie est une classe C++), ce qui viendra avec les stratégies
 des lots M7 et M8.
 
+---
+
+## ADR-012 — L'impact : ce qui est mesuré, et un résultat négatif
+
+**Décision.** Le lot M6 livre dans `impact/` : le modèle de propagateur de
+Bouchaud, Gefen, Potters & Wyart (2004) sans le facteur de volume
+(simulation, diffusion $D(\ell)$, ajustement de $G$ par résolution du
+système linéaire qui relie la réponse aux corrélations de signes) ; le lambda
+de Kyle par régression ; la mesure de l'impact d'un métaordre injecté dans le
+simulateur d'intelligence zéro ; le coût d'un aller-retour dans un modèle
+d'impact transitoire. Et dans `sim/` un flux de signes à mémoire longue (le
+modèle de découpage d'ordres de Lillo, Mike & Farmer 2005, forme « N fixé »).
+
+**Ce que les tests retrouvent.**
+- Kyle simulé : la régression donne $\sigma_v / (2\sigma_u)$.
+- Sur un flux de mémoire $\gamma = 1/2$, l'exposant de croissance de
+  $D(\ell)$ vaut $2 - 2\beta - \gamma$ sous l'exposant critique, et passe par
+  1 (prix diffusif) à $\beta = (1-\gamma)/2$.
+- Le propagateur est relu à quelques pour cent près sur la première moitié
+  des retards ajustés, malgré des signes très corrélés et du bruit.
+- Avec un impact linéaire et un noyau décroissant, aucun aller-retour ne
+  gagne d'argent ; avec un impact concave et une décroissance exponentielle,
+  on en exhibe un qui gagne.
+
+**Résultat négatif : la loi en racine carrée n'est pas reproduite.** Dans le
+simulateur d'intelligence zéro, l'impact d'un métaordre exécuté lentement est
+**proportionnel** à sa taille (exposant mesuré proche de 1, pas de 1/2). Seul
+l'impact instantané d'un ordre qui traverse le carnet est concave (exposant
+mesuré autour de 0,9). Ce flux n'a pas de mémoire et n'anticipe rien : le
+carnet se reconstitue au même rythme quoi qu'on exécute. Le critère du §5.4
+(« vérifier la loi en racine carrée dans un simulateur ») **n'est donc pas
+rempli**, et un test garde ce constat. La retrouver demande un modèle à
+liquidité latente (Tóth et al. 2011), qui n'est pas écrit : c'est une issue à
+ouvrir, pas un détail.
+
+**Limites de mesure.** L'exposant de mémoire d'un flux se mesure mal : les
+tailles d'ordres ont une variance infinie, et sur un million de signes
+l'exposant ajusté varie de 0,4 à 0,6 selon la graine pour une valeur
+théorique de 0,5. Les tests moyennent plusieurs tirages et comparent d'abord
+la corrélation à sa valeur exacte aux petits retards. La même prudence vaudra
+sur données réelles.
+
+**Formules.** Relues dans l'article : modèle de propagateur, réponse,
+forme en loi de puissance et exposant critique (Bouchaud et al. 2004, éq. 1,
+12, 17, 22, 23) ; modèle de découpage et exposant de la corrélation (Lillo,
+Mike & Farmer 2005, §II, éq. 16 et 17). **Non relu** : Gatheral (2010), dont
+seul le résumé a pu être lu ; il confirme l'énoncé du §5.5 (décroissance
+exponentielle compatible seulement avec un impact linéaire).
+
+**À corriger dans le compagnon.** Le §5.5 illustre l'arbitrage par « acheter
+vite, revendre lentement ». Avec un impact concave, c'est l'inverse qui
+gagne dans notre modèle : acheter lentement (chaque lot pousse davantage le
+prix) et revendre vite. Le sens dépend de la forme de l'impact ; la phrase
+est à nuancer.
+
+**Écarté.**
+- *Ajuster le propagateur avec le facteur $\ln V$ de l'article* : les
+  simulateurs du dépôt traitent des ordres de taille unique.
+- *Présenter l'exposant mesuré dans l'intelligence zéro comme une
+  vérification de la loi en racine carrée* : ce n'en est pas une.
+

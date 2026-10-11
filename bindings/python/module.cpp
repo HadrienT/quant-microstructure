@@ -8,12 +8,17 @@
 #include "quantMicrostructure/core/build_info.hpp"
 #include "quantMicrostructure/core/event.hpp"
 #include "quantMicrostructure/feed/event_file.hpp"
+#include "quantMicrostructure/impact/kyle_lambda.hpp"
+#include "quantMicrostructure/impact/metaorder.hpp"
+#include "quantMicrostructure/impact/propagator.hpp"
+#include "quantMicrostructure/impact/round_trip.hpp"
 #include "quantMicrostructure/measures/flow.hpp"
 #include "quantMicrostructure/measures/liquidity.hpp"
 #include "quantMicrostructure/measures/spread.hpp"
 #include "quantMicrostructure/measures/tape.hpp"
 #include "quantMicrostructure/measures/volatility.hpp"
 #include "quantMicrostructure/sim/hawkes.hpp"
+#include "quantMicrostructure/sim/order_splitting.hpp"
 #include "quantMicrostructure/sim/queue_reactive.hpp"
 #include "quantMicrostructure/sim/rng.hpp"
 #include "quantMicrostructure/sim/toy_models.hpp"
@@ -114,6 +119,12 @@ namespace
     {
         const std::span<const double> values = view(array);
         return {values.begin(), values.end()};
+    }
+
+    std::vector<std::size_t> sizes(const SizeArray &array)
+    {
+        const std::span<const std::uint64_t> raw{array.data(), static_cast<std::size_t>(array.size())};
+        return {raw.begin(), raw.end()};
     }
 
     Timestamp nanos(double seconds)
@@ -553,9 +564,7 @@ namespace
             "signature_plot",
             [](const DoubleArray &prices, const SizeArray &steps)
             {
-                const std::span<const std::uint64_t> raw{steps.data(), static_cast<std::size_t>(steps.size())};
-                const std::vector<std::size_t> s(raw.begin(), raw.end());
-                const std::vector<SignaturePoint> points = signaturePlot(view(prices), s);
+                const std::vector<SignaturePoint> points = signaturePlot(view(prices), sizes(steps));
                 py::dict out;
                 out["step"] = column<std::int64_t>(points, [](const SignaturePoint &p)
                                                    { return p.step; });
@@ -615,6 +624,148 @@ namespace
             py::arg("a"), py::arg("b"), "Share of positions where two sign sequences agree, zeros left out.");
     }
 
+    py::dict regressionDict(const Regression &r)
+    {
+        py::dict out;
+        out["slope"] = r.slope;
+        out["intercept"] = r.intercept;
+        out["r_squared"] = r.r_squared;
+        out["slope_se"] = r.slope_se;
+        out["observations"] = r.observations;
+        return out;
+    }
+
+    void bindImpact(py::module_ &m)
+    {
+        m.def(
+            "simulate_order_splitting_signs",
+            [](double alpha, std::size_t count, std::uint64_t seed, std::size_t hidden_orders)
+            {
+                Rng rng(seed);
+                return toArray(simulateOrderSplittingSigns(alpha, hidden_orders, count, rng));
+            },
+            py::arg("alpha"), py::arg("count"), py::arg("seed"), py::arg("hidden_orders") = 1,
+            "Trade signs with a long memory (Lillo, Mike & Farmer 2005): large orders of\n"
+            "Pareto size, tail exponent alpha, split into unit trades. The sign\n"
+            "correlation decays as lag^-(alpha - 1).");
+
+        m.def(
+            "power_law_propagator",
+            [](double gamma0, double l0, double beta, std::size_t length)
+            { return toArray(powerLawPropagator(gamma0, l0, beta, length)); },
+            py::arg("gamma0"), py::arg("l0"), py::arg("beta"), py::arg("length"),
+            "G(l) = gamma0 l0^beta / (l0 + l)^beta for l = 1..length.");
+
+        m.def("critical_propagator_exponent", &criticalPropagatorExponent, py::arg("gamma"),
+              "(1 - gamma) / 2: the propagator exponent for which the price is diffusive.");
+
+        m.def(
+            "propagator_prices",
+            [](const DoubleArray &signs, const DoubleArray &propagator, double noise_sd, std::uint64_t seed)
+            {
+                Rng rng(seed);
+                return toArray(propagatorPrices(view(signs), view(propagator), noise_sd, rng));
+            },
+            py::arg("signs"), py::arg("propagator"), py::arg("noise_sd") = 0.0, py::arg("seed") = 1,
+            "Prices before each trade in the propagator model of Bouchaud et al. (2004):\n"
+            "p_n = sum over k < n of G(n - k) e_k + noise.");
+
+        m.def(
+            "price_diffusion", [](const DoubleArray &prices, const SizeArray &lags)
+            { return toArray(priceDiffusion(view(prices), sizes(lags))); },
+            py::arg("prices"), py::arg("lags"), "D(l) = <(p_{n+l} - p_n)^2>; proportional to l for a diffusive price.");
+
+        m.def(
+            "fit_propagator",
+            [](const DoubleArray &signs, const DoubleArray &prices, std::size_t length)
+            { return toArray(fitPropagator(view(signs), view(prices), length)); },
+            py::arg("signs"), py::arg("prices"), py::arg("length"),
+            "Estimates G(1..length) from trade signs and the prices before each trade.\n"
+            "Trust the first half of the result.");
+
+        m.def(
+            "linear_regression", [](const DoubleArray &x, const DoubleArray &y)
+            { return regressionDict(linearRegression(view(x), view(y))); },
+            py::arg("x"), py::arg("y"), "Ordinary least squares of y on x, with an intercept.");
+
+        m.def(
+            "signed_flow_bars",
+            [](const Tape &tape, double interval)
+            {
+                const FlowBars bars = signedFlowBars(tape, nanos(interval));
+                py::dict out;
+                out["flow"] = toArray(bars.flow);
+                out["price_change"] = toArray(bars.price_change);
+                return out;
+            },
+            py::arg("tape"), py::arg("interval"),
+            "Signed volume (lots) and mid price change (ticks) per interval of `interval`\n"
+            "seconds.");
+
+        m.def(
+            "kyle_lambda", [](const Tape &tape, double interval)
+            { return regressionDict(kyleLambda(tape, nanos(interval))); },
+            py::arg("tape"), py::arg("interval"),
+            "Kyle's lambda: slope of the mid price change on the signed volume of the\n"
+            "same interval, in ticks per lot. It depends on the interval, and its\n"
+            "standard error assumes independent intervals.");
+
+        m.def(
+            "measure_metaorder_impact",
+            [](double limit_rate, double market_rate, double cancel_rate, Price window, const SizeArray &children, double child_interval, double warmup, std::size_t repetitions, std::uint64_t seed)
+            {
+                MetaorderExperiment experiment;
+                experiment.market.limit_rate = limit_rate;
+                experiment.market.market_rate = market_rate;
+                experiment.market.cancel_rate = cancel_rate;
+                experiment.market.window = window;
+                experiment.market.initial_price = 10'000;
+                experiment.children = sizes(children);
+                experiment.child_interval = child_interval;
+                experiment.warmup = warmup;
+                experiment.repetitions = repetitions;
+                experiment.seed = seed;
+                const std::vector<MetaorderImpactPoint> points = measureMetaorderImpact(experiment);
+                py::dict out;
+                out["size"] = column<std::int64_t>(points, [](const MetaorderImpactPoint &p)
+                                                   { return p.size; });
+                out["impact"] = column<double>(points, [](const MetaorderImpactPoint &p)
+                                               { return p.impact; });
+                out["standard_error"] = column<double>(points, [](const MetaorderImpactPoint &p)
+                                                       { return p.standard_error; });
+                out["samples"] = column<std::int64_t>(points, [](const MetaorderImpactPoint &p)
+                                                      { return p.samples; });
+                return out;
+            },
+            py::arg("limit_rate"), py::arg("market_rate"), py::arg("cancel_rate"), py::arg("window"), py::arg("children"),
+            py::arg("child_interval") = 1.0, py::arg("warmup") = 100.0, py::arg("repetitions") = 200, py::arg("seed") = 1,
+            "Buys each metaorder size by unit market orders, `child_interval` seconds\n"
+            "apart, in a zero-intelligence market, and returns the mean rise of the mid in\n"
+            "excess of the same market without the metaorder. This model does NOT\n"
+            "reproduce the square-root law.");
+
+        m.def(
+            "fit_power_law",
+            [](const DoubleArray &x, const DoubleArray &y)
+            {
+                const PowerLawFit fit = fitPowerLaw(view(x), view(y));
+                py::dict out;
+                out["prefactor"] = fit.prefactor;
+                out["exponent"] = fit.exponent;
+                return out;
+            },
+            py::arg("x"), py::arg("y"), "y = prefactor * x^exponent, by least squares on logarithms.");
+
+        m.def(
+            "impact_trading_cost",
+            [](const DoubleArray &trades, const DoubleArray &kernel, double exponent)
+            { return impactTradingCost(view(trades), view(kernel), exponent); },
+            py::arg("trades"), py::arg("kernel"), py::arg("exponent") = 1.0,
+            "Cost of a sequence of signed trades in a transient impact model with decay\n"
+            "kernel G(0), G(1), ... and impact |q|^exponent. Negative for a round trip:\n"
+            "the model can be manipulated.");
+    }
+
 } // namespace
 
 PYBIND11_MODULE(quantmicrostructure, m)
@@ -641,4 +792,5 @@ PYBIND11_MODULE(quantmicrostructure, m)
     bindStreams(m);
     bindSimulators(m);
     bindMeasures(m);
+    bindImpact(m);
 }

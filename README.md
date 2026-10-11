@@ -11,8 +11,8 @@ It is built around the three questions of the field:
 | What does a trade cost? | Market impact (response function, propagator, square-root law), optimal execution (Almgren-Chriss, TWAP, VWAP, POV), transaction cost analysis |
 | What does quoting earn? | Market making (Avellaneda-Stoikov, Guéant-Lehalle-Fernandez-Tapia), markouts, a book-level backtest with latency and queue position |
 
-**Status: order book, matching engine, simulators, measures and backtest.**
-Work packages M0 (build chain), M2, M4, M3 and M5 are done:
+**Status: order book, matching engine, simulators, measures, backtest and
+impact.** Work packages M0 (build chain) and M2 to M6 are done:
 
 - integer types and the single event format, an event file reader and writer
   with gap detection;
@@ -28,10 +28,14 @@ Work packages M0 (build chain), M2, M4, M3 and M5 are done:
 - a book-level backtest: one strategy interface, run against a recorded
   stream (latency, queue position, fees) or inside the simulator, where the
   market reacts;
-- simulators and measures available from Python.
+- market impact: the propagator model and its fit, Kyle's lambda, metaorders
+  injected into the simulator, round-trip costs;
+- simulators, measures and impact available from Python.
 
-Nothing has been measured on real data yet, and there is no impact,
-execution or market-making model.
+Nothing has been measured on real data yet, and there is no execution or
+market-making model. One expected result is **not** obtained: the
+zero-intelligence simulator does not reproduce the square-root law of
+metaorder impact (see ADR-012 in `blueprint/decisions.md`).
 
 **This is a study repository, not a trading system.** It never connects to an
 exchange to send an order.
