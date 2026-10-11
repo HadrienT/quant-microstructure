@@ -145,3 +145,128 @@ marché est une course de vitesse perdue d'avance (§12 du compagnon).
 - *Un mode « papier » branché sur une place* : pédagogique, mais c'est déjà
   une connexion authentifiée et un pas vers le réel. Si le mainteneur le veut
   un jour, c'est un nouvel ADR et un dépôt séparé.
+
+---
+
+## ADR-007 — Le format d'événement
+
+**Décision.** Un événement est un enregistrement de taille fixe
+(`core/event.hpp`) : deux horodatages (`ts` de la place, `ts_recv` de
+réception), un numéro de séquence, un identifiant d'ordre, un prix, une
+quantité, un type et un côté. Cinq types : `Add`, `Cancel`, `Trade` pour un
+flux ordre par ordre (L3) ; `Level`, `Trade` pour un flux agrégé (L2) ;
+`Clear` pour les deux. Sur disque : un en-tête de 8 octets puis des
+enregistrements de 50 octets, entiers petit-boutistes écrits champ par champ.
+
+Conventions :
+
+- le `side` d'un `Trade` est celui de **l'agresseur** (le $\varepsilon$ du
+  compagnon : $+1$ pour un achat) ; l'ordre en attente est du côté opposé, et
+  le prix est le sien ;
+- un `Level` porte la quantité **totale** au prix, pas une variation ; zéro
+  supprime le niveau ;
+- dans un flux agrégé, un `Trade` n'est qu'une information : c'est le `Level`
+  qui le suit qui change le carnet ;
+- deux événements consécutifs ont des numéros qui se suivent ; tout autre
+  écart est un trou.
+
+**Pourquoi.** Trois messages suffisent à décrire un marché à carnet (§2.1 du
+compagnon), et un flux agrégé n'en demande qu'un de plus. Une taille fixe se
+lit sans analyse syntaxique, et l'écriture champ par champ rend un fichier
+indépendant de la machine et du compilateur, ce que demande le déterminisme.
+Les deux horodatages sont ceux que le §15 du compagnon demande de garder.
+
+**Écarté.**
+- *Écrire la structure telle quelle en mémoire* : plus court, mais les octets
+  de remplissage et le boutisme dépendraient du compilateur.
+- *Un type par message, dans un `std::variant`* : plus sûr à la lecture, mais
+  la taille n'est plus fixe et chaque consommateur doit visiter le variant.
+- *Des types forts pour `Price` et `Quantity`* : ils empêcheraient de passer
+  l'un pour l'autre. Ce sont de simples alias pour l'instant ; à reconsidérer
+  si l'erreur se produit.
+
+**Ce que le format ne porte pas, et qui pourra demander une version 2.**
+- L'identifiant de l'ordre **agresseur** d'une transaction. Le moteur le
+  rend à l'appelant (`SubmitResult`), le flux ne le garde pas.
+- La compression et le découpage en fichiers, qui relèvent de l'ADR-004.
+
+---
+
+## ADR-008 — La structure de données du carnet
+
+**Décision.** Le carnet ordre par ordre (`book/order_book.hpp`) est fait de
+trois structures : par côté, une table ordonnée (`std::map`) du prix vers le
+niveau ; par niveau, une liste doublement chaînée des ordres, du plus ancien
+au plus récent ; une table de hachage de l'identifiant vers l'ordre. Les
+ordres vivent dans un vecteur et se chaînent par indice ; chacun garde un
+itérateur vers son niveau.
+
+**Pourquoi.** Les opérations fréquentes sont, dans l'ordre : ajouter un
+ordre, en annuler un, lire le meilleur prix, exécuter le premier de la file.
+Avec cette structure elles sont en temps constant, sauf l'ouverture d'un
+nouveau niveau de prix, logarithmique dans le nombre de niveaux. C'est la
+structure la plus simple qui ait ces complexités, et le premier benchmark
+(`benchmarks/RESULTS.md`) donne le point de départ contre lequel mesurer la
+suite.
+
+**Écarté pour l'instant.**
+- *Un tableau indexé par le prix en ticks* : accès au niveau sans arbre, mais
+  il faut borner la plage de prix, ce qui convient mal à un actif à petit
+  tick dont le prix se déplace de milliers de ticks.
+- *Des tables de hachage et des allocateurs spécialisés* : sans mesure sur un
+  flux réel, on ne sait pas ce qu'ils rapporteraient.
+
+Ces deux pistes ne se rouvrent qu'avec un benchmark sur un flux capturé
+(lot M1) : le flux aléatoire actuel n'a que 41 niveaux de prix et ne dit rien
+du coût de l'arbre sur un vrai carnet.
+
+---
+
+## ADR-009 — Ce que les simulateurs sont, et où ils s'écartent des articles
+
+**Décision.** Le lot M4 livre quatre familles de simulateurs dans `sim/`, avec
+un générateur aléatoire commun (`sim/rng.hpp` : `std::mt19937_64`, dont la
+suite est fixée par la norme, et des lois écrites à la main parce que celles
+de la bibliothèque standard ne sont pas spécifiées).
+
+| Simulateur | Sortie | Régime | Écart par rapport à l'article |
+|---|---|---|---|
+| Intelligence zéro (Smith et al. 2003) | flux ordre par ordre, à travers le moteur d'appariement | aucun supposé | ordres déposés sur une **fenêtre finie** de prix, pas sur un intervalle semi-infini : le carnet peut se vider, et un côté vide est remplacé par son dernier meilleur prix |
+| Hawkes, noyau exponentiel | instants d'arrivée en secondes | sans objet | **univarié** seulement ; pas encore un flux d'événements |
+| Queue-reactive (Huang, Lehalle & Rosenbaum 2015), modèles I et III | flux **agrégé** (`Level`, `Trade`) | **gros tick** | une seule taille d'événement pour toutes les files (l'article en a une par file) ; tailles de file bornées par la longueur des tables d'intensité |
+| Roll, Kyle (une période), Glosten-Milgrom | transactions pour Roll ; tableaux de nombres pour les deux autres | sans objet | aucun |
+
+**Pourquoi ces écarts.** La fenêtre finie est ce qui rend l'intelligence zéro
+simulable ; elle ne change pas la profondeur loin du meilleur prix, que le
+test retrouve ($\alpha/\delta$). La taille unique et la borne des files
+simplifient le queue-reactive sans toucher à sa loi invariante, que le test
+retrouve aussi. Le Hawkes multivarié n'est utile qu'au lot M6 (propagateur) :
+il s'écrira là, avec son besoin.
+
+**Formules relues dans l'article, et celles qui ne l'ont pas été.**
+
+- Relues (les équations sont citées dans les commentaires) : vraisemblance
+  récursive, amincissement d'Ogata et changement de temps dans Laub, Taimre &
+  Pollett (2015) ; intensité moyenne dans Bacry, Mastromatteo & Muzy (2015) ;
+  modèle et profondeur asymptotique dans Smith et al. (2003) ; modèles I et
+  III et loi invariante dans Huang, Lehalle & Rosenbaum (2015).
+- **Non relues** : Roll (1984), Kyle (1985) et Glosten & Milgrom (1985), dont
+  les articles ne sont pas en accès libre. Leurs formules sont dérivées dans
+  les commentaires de `sim/toy_models.hpp` et vérifiées par simulation ;
+  aucun numéro d'équation n'est cité. Même chose pour Ogata (1981), lu à
+  travers Laub et al. À relire dans les originaux quand ils seront
+  disponibles.
+
+**Déterminisme.** Une graine donne partout les mêmes entiers. Les tirages en
+virgule flottante passent par `std::log`, `std::sqrt` et `std::cos` : ils sont
+identiques là où la bibliothèque mathématique arrondit de la même façon, ce
+qui n'est pas garanti d'une plateforme à l'autre.
+
+**Écarté.**
+- *Les lois de `<random>`* (`std::exponential_distribution`, etc.) : leur
+  algorithme dépend de la bibliothèque standard, donc la même graine ne
+  donnerait pas le même flux avec un autre compilateur.
+- *Sortir le queue-reactive en flux ordre par ordre* : le modèle ne connaît
+  que des quantités par prix ; inventer des ordres ajouterait une hypothèse
+  de file que l'article ne fait pas.
+

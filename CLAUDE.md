@@ -16,13 +16,28 @@ ajouter.
 
 ## État du dépôt
 
-**Socle de build seul, aucun code de domaine.** Le dépôt a été créé le
-11 octobre 2026. Mettre cette section à jour à chaque lot livré.
+**Carnet, moteur d'appariement et simulateurs de flux livrés ; aucune mesure,
+aucune donnée réelle.** Le dépôt a été créé le 11 octobre 2026. Mettre cette
+section à jour à chaque lot livré.
 
 | Lot | État |
 |---|---|
-| M0 — Socle | livré : chaîne de build, tests, benchmark, wheel, CI. La lib ne contient que `core/build_info` |
-| M1 à M8 | à faire ; le suivant est **M2** (carnet et moteur), M1 (capture, dans `data-ingest`) à lancer tôt |
+| M0 — Socle | livré : chaîne de build, tests, benchmark, wheel, CI |
+| M2 — Carnet et moteur | livré : `core/` (types entiers, format d'événement), `feed/` (fichier d'événements, détection de trous), `book/` (carnet L3, carnet L2, agrégation L3 vers L2), `matching/` (moteur prix-temps). Rien n'est encore exposé à Python |
+| M4 — Simulateurs | livré : `sim/` (générateur aléatoire, intelligence zéro, Hawkes univarié avec maximum de vraisemblance et changement de temps, queue-reactive, Roll, Kyle, Glosten-Milgrom). Écarts aux articles et formules non relues : ADR-009 |
+| M1, M3, M5 à M8 | à faire ; le suivant est **M3** (mesures), puis M5 (backtest carnet). M1 (capture, dans `data-ingest`) est à lancer tôt |
+
+Où lire le code, dans l'ordre : `core/event.hpp` (le format, ADR-007),
+`book/order_book.hpp` (la structure, ADR-008), `matching/matching_engine.hpp`,
+puis `tests/testBookProperties.cpp` (les propriétés du §14). Pour les
+simulateurs : `sim/toy_models.hpp` (les trois modèles du §4, avec leur
+dérivation), `sim/zero_intelligence.hpp`, `sim/hawkes.hpp`,
+`sim/queue_reactive.hpp`.
+
+`sim/` utilise des `double` (taux, temps en secondes, valeurs de Kyle) :
+l'interdiction ne vaut que pour `core/`, `book/` et `matching/`. Tout
+simulateur prend une graine et passe par `sim/rng.hpp`, jamais par les lois de
+`<random>`.
 
 ## Par où commencer
 
@@ -99,9 +114,18 @@ Cibles CMake : `quantMicrostructure` (la lib), `quantMicrostructure_tests`,
 Options : `QM_BUILD_TESTS`, `QM_BUILD_BENCHMARKS`, `QM_BUILD_PYTHON`. Un
 fichier source ou un test nouveau s'ajoute à la main dans la liste de sa cible.
 
-Le benchmark actuel (`benchmarks/bench_skeleton.cpp`) est un bouche-trou qui
-garde la chaîne en état de construire : il ne mesure rien, et le lot M2 le
-remplace par celui du carnet et du moteur.
+Les tests et le benchmark tirent leurs flux d'ordres de
+[`tests/support/random_flow.hpp`](tests/support/random_flow.hpp) : un flux
+aléatoire sans modèle, fait pour éprouver le carnet, pas pour ressembler à un
+marché. Les tests statistiques (moyennes, test de Kolmogorov-Smirnov) passent
+par [`tests/support/statistics.hpp`](tests/support/statistics.hpp), à graine
+fixe et avec des tolérances de quatre à cinq écarts-types.
+
+Les résultats du benchmark sont dans
+[`benchmarks/RESULTS.md`](benchmarks/RESULTS.md), avec leurs limites. **Le
+relancer et mettre ce fichier à jour à chaque changement de `book/` ou de
+`matching/`** (`scripts/bench.sh --benchmark_repetitions=5`), après avoir
+vérifié qu'aucun autre build ne tourne.
 
 ## Suivi du travail — GitHub Issues
 
