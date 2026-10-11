@@ -12,6 +12,9 @@ add_executable(quantMicrostructure_tests
   testHawkes.cpp
   testToyModels.cpp
   testQueueReactive.cpp
+  testTape.cpp
+  testMeasures.cpp
+  testBacktest.cpp
 )
 target_link_libraries(quantMicrostructure_tests
   PRIVATE

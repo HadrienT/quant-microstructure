@@ -53,20 +53,59 @@ namespace quantMicrostructure
 
     void ZeroIntelligenceSimulator::runUntil(Timestamp end, std::vector<Event> &out)
     {
-        const double end_seconds = static_cast<double>(end) / NanosPerSecond;
-        while (true)
+        while (stepBefore(end, out))
         {
-            const double next = time_ + rng_.exponential(totalRate());
-            if (next > end_seconds)
-            {
-                // The waiting time is memoryless: dropping this draw and
-                // drawing again later does not change the law of the flow.
-                time_ = end_seconds;
-                return;
-            }
-            time_ = next;
-            act(out);
         }
+    }
+
+    bool ZeroIntelligenceSimulator::stepBefore(Timestamp end, std::vector<Event> &out)
+    {
+        const double end_seconds = static_cast<double>(end) / NanosPerSecond;
+        const double next = time_ + rng_.exponential(totalRate());
+        if (next > end_seconds)
+        {
+            // The waiting time is memoryless: dropping this draw and drawing
+            // again later does not change the law of the flow.
+            if (end_seconds > time_)
+            {
+                time_ = end_seconds;
+            }
+            return false;
+        }
+        time_ = next;
+        act(out);
+        return true;
+    }
+
+    SubmitResult ZeroIntelligenceSimulator::submitLimit(OrderId id, Side side, Price price, Quantity qty, std::vector<Event> &out)
+    {
+        if (id < FirstParticipantId)
+        {
+            throw std::invalid_argument("ZeroIntelligenceSimulator: a participant's order id must be at least FirstParticipantId");
+        }
+        const std::size_t first = out.size();
+        const SubmitResult result = engine_.submitLimit(id, side, price, qty, now(), out);
+        afterEvents(out, first);
+        return result;
+    }
+
+    SubmitResult ZeroIntelligenceSimulator::submitMarket(Side side, Quantity qty, std::vector<Event> &out)
+    {
+        const std::size_t first = out.size();
+        const SubmitResult result = engine_.submitMarket(side, qty, now(), out);
+        afterEvents(out, first);
+        return result;
+    }
+
+    Quantity ZeroIntelligenceSimulator::cancel(OrderId id, std::vector<Event> &out)
+    {
+        if (id < FirstParticipantId)
+        {
+            throw std::invalid_argument("ZeroIntelligenceSimulator: a participant can only cancel its own orders");
+        }
+        const Quantity cancelled = engine_.cancel(id, now(), out);
+        afterEvents(out, out.size());
+        return cancelled;
     }
 
     void ZeroIntelligenceSimulator::act(std::vector<Event> &out)
@@ -90,13 +129,8 @@ namespace quantMicrostructure
             const Side side = draw < 2.0 * limit_side + params_.market_rate ? Side::Buy : Side::Sell;
             const std::size_t first = out.size();
             engine_.submitMarket(side, params_.order_size, ts, out);
-            for (std::size_t i = first; i < out.size(); ++i)
-            {
-                if (!engine_.book().find(out[i].order_id))
-                {
-                    forget(out[i].order_id);
-                }
-            }
+            afterEvents(out, first);
+            return;
         }
         else if (!resting_.empty())
         {
@@ -104,7 +138,20 @@ namespace quantMicrostructure
             engine_.cancel(id, ts, out);
             forget(id);
         }
+        afterEvents(out, out.size());
+    }
 
+    void ZeroIntelligenceSimulator::afterEvents(const std::vector<Event> &out, std::size_t first)
+    {
+        // Orders of the model that a trade used up are no longer there to be
+        // cancelled.
+        for (std::size_t i = first; i < out.size(); ++i)
+        {
+            if (out[i].type == EventType::Trade && !engine_.book().find(out[i].order_id))
+            {
+                forget(out[i].order_id);
+            }
+        }
         if (const auto bid = engine_.book().bestBid())
         {
             reference_bid_ = *bid;

@@ -43,6 +43,12 @@ add_library(quantMicrostructure
   src/sim/hawkes.cpp
   src/sim/toy_models.cpp
   src/sim/queue_reactive.cpp
+  src/measures/tape.cpp
+  src/measures/spread.cpp
+  src/measures/liquidity.cpp
+  src/measures/volatility.cpp
+  src/measures/flow.cpp
+  src/replay/backtest.cpp
 )
 
 set_target_properties(quantMicrostructure PROPERTIES

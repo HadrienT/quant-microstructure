@@ -76,6 +76,26 @@ namespace quantMicrostructure
         /// `end`, and now() is `end` afterwards.
         void runUntil(Timestamp end, std::vector<Event> &out);
 
+        /// Draws the next order if it comes before `end`, appends its events
+        /// and returns true. Otherwise moves the clock to `end` and returns
+        /// false.
+        bool stepBefore(Timestamp end, std::vector<Event> &out);
+
+        // ---- An outside participant ----
+        //
+        // Orders sent at the current time by somebody who is not part of the
+        // model (a strategy under test). They go through the same matching
+        // engine as the simulated flow, which then reacts to them the only
+        // way this model can: mechanically, through the book. The simulated
+        // flow never cancels them. Their ids must be at least
+        // FirstParticipantId, so that they cannot collide with the model's.
+
+        static constexpr OrderId FirstParticipantId = OrderId{1} << 62;
+
+        SubmitResult submitLimit(OrderId id, Side side, Price price, Quantity qty, std::vector<Event> &out);
+        SubmitResult submitMarket(Side side, Quantity qty, std::vector<Event> &out);
+        Quantity cancel(OrderId id, std::vector<Event> &out);
+
         /// Nanoseconds since the start of the run.
         Timestamp now() const noexcept;
 
@@ -85,6 +105,7 @@ namespace quantMicrostructure
         double totalRate() const noexcept;
         void act(std::vector<Event> &out);
         void forget(OrderId id);
+        void afterEvents(const std::vector<Event> &out, std::size_t first);
 
         ZeroIntelligenceParams params_;
         Rng rng_;

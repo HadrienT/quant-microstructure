@@ -11,8 +11,8 @@ It is built around the three questions of the field:
 | What does a trade cost? | Market impact (response function, propagator, square-root law), optimal execution (Almgren-Chriss, TWAP, VWAP, POV), transaction cost analysis |
 | What does quoting earn? | Market making (Avellaneda-Stoikov, Guéant-Lehalle-Fernandez-Tapia), markouts, a book-level backtest with latency and queue position |
 
-**Status: order book, matching engine and order flow simulators.** Work
-packages M0 (build chain), M2 and M4 are done:
+**Status: order book, matching engine, simulators, measures and backtest.**
+Work packages M0 (build chain), M2, M4, M3 and M5 are done:
 
 - integer types and the single event format, an event file reader and writer
   with gap detection;
@@ -21,10 +21,17 @@ packages M0 (build chain), M2 and M4 are done:
   [benchmark](benchmarks/RESULTS.md);
 - simulators: zero-intelligence, Hawkes (simulation, maximum likelihood,
   time-change validation), queue-reactive, and the Roll, Kyle and
-  Glosten-Milgrom models, each tested against its closed formula.
+  Glosten-Milgrom models, each tested against its closed formula;
+- measures: quoted, effective and realised spreads, Roll's estimator,
+  imbalance, realised variance, signature plot, two-scale estimator, sign
+  correlation, response function, trade signing;
+- a book-level backtest: one strategy interface, run against a recorded
+  stream (latency, queue position, fees) or inside the simulator, where the
+  market reacts;
+- simulators and measures available from Python.
 
-Nothing is measured on real data yet, and there is no measure, execution or
-market-making model.
+Nothing has been measured on real data yet, and there is no impact,
+execution or market-making model.
 
 **This is a study repository, not a trading system.** It never connects to an
 exchange to send an order.
@@ -60,6 +67,25 @@ vcpkg clone (dependencies are installed from `vcpkg.json` at configure time).
 | `scripts/build_wheel.sh` | Build the `quantmicrostructure` wheel into `dist/` |
 | `pytest` | Python tests, against the wheel installed in the current environment |
 | `pre-commit run --all-files` | clang-format 18 and black |
+
+## From Python
+
+```python
+import quantmicrostructure as qm
+
+# A zero-intelligence market: rates in orders per second, duration in seconds.
+market = qm.simulate_zero_intelligence(
+    limit_rate=2.0, market_rate=1.5, cancel_rate=0.2, window=10,
+    duration=2000.0, seed=2026,
+)
+tape = qm.build_tape(market)              # quotes and trades
+qm.spread_decomposition(tape, horizon=1.0)  # effective = realized + impact
+qm.imbalance_next_move(tape, bins=5)["probability_up"]
+qm.response_function(tape, max_lag=50)
+```
+
+Prices are in ticks, quantities in lots, timestamps in nanoseconds. These
+figures come from a simulator, not from a market.
 
 ## License
 
