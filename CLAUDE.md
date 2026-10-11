@@ -16,9 +16,13 @@ ajouter.
 
 ## État du dépôt
 
-**Spécification seule, aucun code.** Le dépôt a été créé le 11 octobre 2026.
-Le premier lot à faire est **M0** (socle de build). Mettre cette section à
-jour à chaque lot livré.
+**Socle de build seul, aucun code de domaine.** Le dépôt a été créé le
+11 octobre 2026. Mettre cette section à jour à chaque lot livré.
+
+| Lot | État |
+|---|---|
+| M0 — Socle | livré : chaîne de build, tests, benchmark, wheel, CI. La lib ne contient que `core/build_info` |
+| M1 à M8 | à faire ; le suivant est **M2** (carnet et moteur), M1 (capture, dans `data-ingest`) à lancer tôt |
 
 ## Par où commencer
 
@@ -72,9 +76,32 @@ référencées l'une par l'autre.
 
 ## Commandes
 
-Aucune pour l'instant : les fichiers de build arrivent avec le lot M0, qui
-remplira ce tableau en reprenant la chaîne de `~/quant-backtest`
-(`scripts/make.sh`, `scripts/make_asan.sh`, `scripts/build_wheel.sh`).
+`VCPKG_ROOT` doit pointer sur un clone de vcpkg ; les dépendances sont
+installées par le manifeste [`vcpkg.json`](vcpkg.json) à la configuration.
+
+| Commande | Effet |
+|---|---|
+| `scripts/make.sh` | Configure (preset `default`), construit dans `build/`, lance tous les tests |
+| `scripts/make_asan.sh` | Idem avec ASan et UBSan, dans `build-asan/` |
+| `cmake --preset default && cmake --build build` | Construire sans lancer les tests |
+| `ctest --test-dir build --output-on-failure` | Tous les tests |
+| `ctest --test-dir build -R BuildInfo` | Les tests dont le nom contient un motif |
+| `scripts/bench.sh` | Construit (preset `bench`, dans `build-bench/`) et lance le benchmark ; les arguments vont à google-benchmark, par exemple `--benchmark_filter=...` |
+| `scripts/build_wheel.sh` | Wheel `quantmicrostructure` dans `dist/` (sans vcpkg : la lib n'a aucune dépendance tierce) |
+| `pytest` | Tests Python, sur le wheel installé dans l'environnement courant |
+| `pre-commit run --all-files` | `clang-format` 18 et `black` |
+
+Les scripts bornent le build et les tests à `NPROC` processus (16 par défaut,
+8 sous ASan) : `NPROC=4 scripts/make.sh`.
+
+Cibles CMake : `quantMicrostructure` (la lib), `quantMicrostructure_tests`,
+`quantMicrostructure_bench`, et `quantmicrostructure` (le module Python).
+Options : `QM_BUILD_TESTS`, `QM_BUILD_BENCHMARKS`, `QM_BUILD_PYTHON`. Un
+fichier source ou un test nouveau s'ajoute à la main dans la liste de sa cible.
+
+Le benchmark actuel (`benchmarks/bench_skeleton.cpp`) est un bouche-trou qui
+garde la chaîne en état de construire : il ne mesure rien, et le lot M2 le
+remplace par celui du carnet et du moteur.
 
 ## Suivi du travail — GitHub Issues
 
