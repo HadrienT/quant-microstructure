@@ -6,7 +6,7 @@ pas l'historique.
 
 Les entrées marquées **OUVERTE** sont des propositions : elles attendent une
 mesure ou un choix du mainteneur, et ne doivent pas être traitées comme
-acquises.
+acquises. Il n'en reste aucune : l'ADR-004 a été tranchée par l'ADR-015.
 
 ---
 
@@ -81,7 +81,10 @@ Tout résultat le dit (§15 du compagnon).
 
 ---
 
-## ADR-004 — Capture et stockage des flux — OUVERTE
+## ADR-004 — Capture et stockage des flux — OUVERTE, tranchée par l'ADR-015
+
+*Le stockage a été décidé le 11 octobre 2026 : voir l'ADR-015. Le texte
+ci-dessous est conservé tel qu'il était.*
 
 **Proposition.** La capture est un service de `data-ingest` (une connexion
 permanente, pas une tâche planifiée), qui écrit des fichiers d'événements
@@ -558,4 +561,70 @@ tout de suite et notifiées une fois le carnet à jour (test
 **Formules.** Relues dans l'article : Avellaneda & Stoikov (2008), éq. 3.17,
 3.18 et §3.3 ; Guéant, Lehalle & Fernandez-Tapia (2013), propositions 1 à 3
 et théorème 1.
+
+---
+
+## ADR-015 — Stockage des flux capturés : fichiers binaires, séries temporelles en appui
+
+Remplace la proposition de l'ADR-004 pour ce qui est du stockage.
+
+**Décision.** Choix du mainteneur (11 octobre 2026).
+
+- **Les événements bruts vont dans des fichiers binaires à enregistrements de
+  taille fixe** : le format d'événement de l'ADR-007 (`feed/event_file.hpp`),
+  un fichier par paire et par jour. Ces fichiers sont la **source de
+  vérité** : c'est eux que lisent le rejeu, le backtest et les mesures.
+- **Une base de séries temporelles vient en appui**, dans le Postgres de
+  `data-ingest` : le catalogue (quels fichiers, quelles plages, combien de
+  trous) et des **agrégats calculés à partir des fichiers** (barres,
+  fourchette, volume, qualité du flux), interrogeables en SQL.
+- **Le sens est unique** : fichiers vers base. Un agrégat faux ou nouveau se
+  recalcule depuis les fichiers ; on ne reconstruit jamais un carnet à partir
+  d'agrégats.
+
+**Pourquoi.**
+- Le besoin premier est de relire une journée entière dans l'ordre : un
+  fichier le fait sans intermédiaire, et le lecteur existe déjà ici.
+- La capture ne dépend pas de la base : si Postgres ralentit ou tombe, on
+  continue d'écrire. Une heure de flux perdue ne se rattrape pas.
+- La base sert là où le SQL est utile (exploration, contrôle de qualité,
+  questions ponctuelles sur des mois), et fait pratiquer au mainteneur une
+  compétence demandée.
+
+**Décidé sans la mesure que l'ADR-004 demandait.** Le volume d'une journée
+n'a pas été mesuré. La décision tient quel que soit ce volume pour le brut ;
+la mesure reste à faire, parce qu'elle fixe la rétention et la compression.
+Ce qui la ferait rouvrir : un volume assez petit pour que tout tienne
+confortablement en base, ou un usage qui deviendrait surtout de
+l'exploration en Python plutôt que du rejeu en C++ (des fichiers Parquet
+seraient alors un meilleur compromis).
+
+**Écarté.**
+- *Tout dans une base de séries temporelles* : une seule source et du SQL
+  partout, mais le rejeu passerait par une requête et une conversion, et la
+  capture dépendrait de la disponibilité de la base.
+- *Des fichiers Parquet pour le brut* : lisibles directement par DuckDB,
+  Polars et pandas, mais un format et une dépendance de plus pour le moteur,
+  qui lit déjà le sien.
+- *kdb+* : la référence du métier pour ce type de données, mais une licence
+  et un langage de plus, que rien dans ce besoin ne justifie.
+- *Des fichiers texte* : lisibles à l'œil, plus gros et plus lents à relire.
+
+**Ce qui reste à décider au lot M1**, dans `data-ingest` :
+- la place de marché et les paires (flux ordre par ordre ou agrégé, une paire
+  à gros tick et une à petit tick si possible) ;
+- la mesure du volume, puis la rétention ;
+- la compression : un fichier compressé d'un bloc perd l'accès direct au
+  n-ième enregistrement. Compresser la journée une fois close est le plus
+  simple ;
+- l'extension de séries temporelles (TimescaleDB est le candidat naturel,
+  Postgres étant déjà là) et la liste des agrégats ;
+- deux manques du format, qui demanderont peut-être une version 2 : le
+  fichier ne dit pas quel type de flux il contient (ordre par ordre ou
+  agrégé), et rien n'y décrit l'instrument (taille du tick et du lot), sans
+  quoi les entiers ne se convertissent pas en prix.
+
+Le service de capture lui-même (une connexion permanente, dans
+`data-ingest`) reste comme le proposait l'ADR-004 et comme le dit
+`CLAUDE.md` : ce dépôt n'ouvre aucune connexion réseau.
 
