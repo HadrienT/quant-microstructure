@@ -495,6 +495,42 @@ namespace quantMicrostructure
         }
     }
 
+    // A strategy is told of a fill once the book shows the trade that caused
+    // it: what it decides there must not rest on a stale book.
+    TEST(Replay, FillIsReportedWithTheBookUpToDate)
+    {
+        const std::vector<Event> events = handMarket([](MatchingEngine &engine, std::vector<Event> &out)
+                                                     {
+                                                         engine.submitLimit(1, Side::Buy, 100, 1, 10, out);  // ahead of us
+                                                         engine.submitLimit(2, Side::Sell, 104, 5, 20, out); // we join now
+                                                         engine.submitLimit(3, Side::Buy, 100, 2, 25, out);  // behind us
+                                                         // Takes the whole bid: order 1, then order 3, whose place is ours.
+                                                         engine.submitMarket(Side::Sell, 3, 30, out); });
+        class RecordsTheView : public Strategy
+        {
+          public:
+            void onMarket(const MarketView &view, Gateway &gateway) override
+            {
+                if (view.now == 20 && !sent_)
+                {
+                    gateway.submitLimit(Side::Buy, 100, 1);
+                    sent_ = true;
+                }
+            }
+            void onFill(const Fill &, const MarketView &view, Gateway &) override { seen = view.quote; }
+            Quote seen;
+
+          private:
+            bool sent_{false};
+        } strategy;
+        const BacktestResult result = runReplay(events, StreamKind::OrderByOrder, strategy, BacktestConfig{});
+        ASSERT_EQ(result.fills.size(), 1u);
+        // The recorded bid at 100, two lots just before the trade that
+        // filled us, is gone by the time we are told.
+        EXPECT_EQ(strategy.seen.bid_qty, 0);
+        EXPECT_EQ(strategy.seen.ask, 104);
+    }
+
     TEST(Replay, SameInputsSameResult)
     {
         const std::vector<Event> events = aggregate(recordedMarket());

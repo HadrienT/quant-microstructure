@@ -88,6 +88,9 @@ namespace quantMicrostructure
         virtual ~Gateway() = default;
 
         /// Returns the id to cancel the order with, and found in its fills.
+        /// There is no post-only order: a limit order that crosses the book
+        /// when it arrives trades as a taker, which latency makes possible
+        /// even for a strategy that only means to quote.
         virtual OrderId submitLimit(Side side, Price price, Quantity qty) = 0;
         virtual void submitMarket(Side side, Quantity qty) = 0;
         /// Does nothing if the order is no longer resting when it arrives.
@@ -103,6 +106,8 @@ namespace quantMicrostructure
         /// The market changed. Not called for the effect of our own orders,
         /// which onFill reports.
         virtual void onMarket(const MarketView &view, Gateway &gateway) = 0;
+        /// One of our orders traded. The view shows the book once the trade
+        /// that filled it has been applied.
         virtual void onFill(const Fill &fill, const MarketView &view, Gateway &gateway);
     };
 
@@ -154,7 +159,10 @@ namespace quantMicrostructure
     /// orders go through its matching engine: queue position is exact, our
     /// aggressive orders remove liquidity for everybody, and the simulated
     /// market orders hit ours. BacktestConfig::queue_model is not used.
-    BacktestResult runSimulation(ZeroIntelligenceSimulator &simulator, Timestamp end, Strategy &strategy, const BacktestConfig &config);
+    ///
+    /// If `record` is given, every event of the run is appended to it, ours
+    /// included: the stream of the market as it was with us in it.
+    BacktestResult runSimulation(ZeroIntelligenceSimulator &simulator, Timestamp end, Strategy &strategy, const BacktestConfig &config, std::vector<Event> *record = nullptr);
 
 } // namespace quantMicrostructure
 

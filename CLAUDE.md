@@ -16,8 +16,9 @@ ajouter.
 
 ## État du dépôt
 
-**Carnet, moteur d'appariement, simulateurs, mesures, backtest au niveau du
-carnet, impact et exécution livrés ; aucune donnée réelle.** Le dépôt a été créé le 11 octobre 2026. Mettre cette
+**Tous les lots de ce dépôt (M0, M2 à M8) sont livrés ; aucune donnée réelle.**
+Il reste la capture (M1, dans `data-ingest`), sans laquelle rien n'est mesuré
+ni calibré sur un vrai marché. Le dépôt a été créé le 11 octobre 2026. Mettre cette
 section à jour à chaque lot livré.
 
 | Lot | État |
@@ -26,10 +27,17 @@ section à jour à chaque lot livré.
 | M2 — Carnet et moteur | livré : `core/` (types entiers, format d'événement), `feed/` (fichier d'événements, détection de trous), `book/` (carnet L3, carnet L2, agrégation L3 vers L2), `matching/` (moteur prix-temps) |
 | M4 — Simulateurs | livré : `sim/` (générateur aléatoire, intelligence zéro, Hawkes univarié avec maximum de vraisemblance et changement de temps, queue-reactive, Roll, Kyle, Glosten-Milgrom). Écarts aux articles et formules non relues : ADR-009 |
 | M3 — Mesures | livré : `measures/` (bande des cotations et transactions, fourchettes cotée, effective, réalisée, Roll, déséquilibre, profondeur, variance réalisée, graphique de signature, deux échelles, corrélation des signes, fonction de réponse, signe des transactions) et **liaisons Python** de tout ce qui précède. Ce qui n'est pas fait : ADR-010 |
-| M5 — Backtest carnet | livré : `replay/` (stratégie, passerelle, latence, file, frais ; `runReplay` sur un flux L2 ou L3, `runSimulation` dans l'intelligence zéro). Hypothèses : ADR-011. Pas encore exposé à Python |
+| M5 — Backtest carnet | livré : `replay/` (stratégie, passerelle, latence, file, frais ; `runReplay` sur un flux L2 ou L3, `runSimulation` dans l'intelligence zéro). Hypothèses : ADR-011. Exposé à Python à travers l'exécution (`execute_schedule`) et la tenue de marché (`market_maker_replay`, `market_maker_simulation`) ; une stratégie reste une classe C++ |
 | M6 — Impact | livré : `impact/` (propagateur, lambda de Kyle, impact d'un métaordre en simulateur, coût d'un aller-retour) et `sim/order_splitting` (signes à mémoire longue). **La loi en racine carrée n'est pas reproduite** par l'intelligence zéro : ADR-012 |
 | M7 — Exécution | livré : `execution/` (Almgren-Chriss discret, TWAP, VWAP, POV, exécuteur d'échéancier dans le backtest, déficit d'exécution). Limites : ADR-013 |
-| M1, M8 | à faire ; le suivant est **M8** (tenue de marché). M1 (capture, dans `data-ingest`) est à lancer tôt |
+| M8 — Tenue de marché | livré : `mm/` (Avellaneda-Stoikov, Guéant-Lehalle-Fernandez-Tapia exact et approché, teneur de marché pour le backtest, décomposition du P&L, markouts). Ce que vaut le résultat : ADR-014 |
+| M1 — Capture | **à faire, dans `data-ingest`** (ADR-004 toujours ouverte). C'est le lot qui débloque tout le reste : mesures, calibrage, backtest sur données |
+
+Trois constats à ne pas oublier, consignés dans les ADR et les issues :
+la loi en racine carrée n'est pas reproduite par l'intelligence zéro (#15,
+ADR-012) ; plusieurs formules ont été codées d'après une dérivation, faute
+d'accès à l'article (#16) ; le P&L d'un teneur de marché dans l'intelligence
+zéro ne dit rien d'un marché réel (ADR-014).
 
 Où lire le code, dans l'ordre : `core/event.hpp` (le format, ADR-007),
 `book/order_book.hpp` (la structure, ADR-008), `matching/matching_engine.hpp`,
@@ -46,8 +54,8 @@ Pour le backtest : `replay/backtest.hpp`, dont les commentaires portent les
 hypothèses (ADR-011), puis `tests/testBacktest.cpp`, qui les déroule une par
 une sur des marchés écrits à la main.
 
-`sim/`, `measures/`, `replay/`, `impact/` et `execution/` utilisent des
-`double` (taux, temps en secondes, valeurs de Kyle) :
+`sim/`, `measures/`, `replay/`, `impact/`, `execution/` et `mm/` utilisent
+des `double` (taux, temps en secondes, valeurs de Kyle) :
 l'interdiction ne vaut que pour `core/`, `book/` et `matching/`. Tout
 simulateur prend une graine et passe par `sim/rng.hpp`, jamais par les lois de
 `<random>`.

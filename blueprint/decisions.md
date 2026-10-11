@@ -493,3 +493,69 @@ définition (portefeuille papier moins portefeuille réel).
   le prix milieu juste avant chaque exécution, que `Fill` ne porte pas. À
   ajouter si une stratégie le demande.
 
+---
+
+## ADR-014 — La tenue de marché : les modèles, le teneur de marché, ce que le résultat vaut
+
+**Décision.** Le lot M8 livre dans `mm/` :
+
+- les cotations d'**Avellaneda & Stoikov (2008)** : prix de réservation et
+  fourchette (éq. 3.17 et 3.18), et la simulation de leur §3.3 ;
+- celles de **Guéant, Lehalle & Fernandez-Tapia (2013)** : la solution exacte
+  à inventaire borné (l'exponentielle de matrice de leur proposition 2) et
+  l'approximation fermée, stationnaire, qui ne dépend que de l'inventaire ;
+- un **teneur de marché pour le backtest** (`MarketMaker`) : un ordre de
+  chaque côté, aux distances que donne une politique de cotation autour du
+  prix milieu, arrondies au tick en s'éloignant du milieu, jamais à travers
+  le carnet, borné par une limite d'inventaire ;
+- la **décomposition du P&L** (fourchette encaissée, mouvement du prix,
+  frais) et les **markouts** à plusieurs horizons.
+
+**Ce que les tests retrouvent.** Inventaire nul : cotations symétriques. Le
+décalage a le signe opposé à l'inventaire, la fourchette n'en dépend pas.
+Contre la stratégie symétrique, les écarts-types du P&L et de l'inventaire
+final sont plus faibles : dans la simulation de l'article, et dans le carnet
+simulé avec le teneur de marché du backtest. La solution exacte devient
+stationnaire loin de l'horizon, et l'approximation fermée en est proche.
+
+**L'article n'est reproduit qu'à peu près.** La procédure du §3.3, codée
+telle qu'elle est écrite, donne pour $\gamma = 0{,}1$ un profit de 64,9
+(écart-type 6,5) et un inventaire final d'écart-type 2,9, contre 62,94, 5,89
+et 2,80 dans le tableau 1. Pour $\gamma = 0{,}5$ l'écart est franc : 48,6
+contre 33,92 (tableau 3). L'article ne décrit pas sa simulation assez
+précisément pour l'expliquer, et ses tableaux portent sur 1000 trajectoires.
+Le test compare à 5 % près sur les profits et 15 % sur les écarts-types pour
+$\gamma = 0{,}1$, et ne prétend rien pour $\gamma = 0{,}5$.
+
+**Ce que vaut un résultat de tenue de marché obtenu ici.**
+- **Dans le simulateur d'intelligence zéro, coter au meilleur prix gagne la
+  fourchette presque sans risque.** Ce flux n'est jamais informé : il n'y a
+  de sélection adverse que mécanique. Le niveau du P&L n'y veut rien dire ;
+  seules les comparaisons (avec ou sans décalage d'inventaire) se lisent.
+- **Sur un rejeu**, le résultat dépend de la latence et de l'hypothèse de
+  file (principe 7) : un test vérifie qu'ils changent le nombre
+  d'exécutions, et la liaison Python renvoie les hypothèses avec le
+  résultat. Il n'y a pas encore de flux réel à rejouer.
+- Les paramètres $A$ et $k$ ne sont **ajustés sur rien**. Les estimer
+  (intensité d'exécution en fonction de la distance) est un travail à faire
+  sur données capturées.
+- Les modèles supposent un prix de référence martingale, sans tick ni file
+  d'attente : tout ce que le §9.3 du compagnon liste comme absent l'est.
+
+**Un défaut du backtest corrigé dans ce lot.** Pendant un rejeu, la stratégie
+était prévenue d'une exécution avant que l'événement qui la cause soit
+appliqué au carnet : elle recotait sur une image en retard d'un événement et
+pouvait traverser le carnet. Les exécutions sont maintenant comptabilisées
+tout de suite et notifiées une fois le carnet à jour (test
+`Replay.FillIsReportedWithTheBookUpToDate`). Cela complète l'ADR-011.
+
+**Limites.**
+- Pas d'ordre « post-only » : sous latence, une cotation peut arriver dans un
+  carnet qui a bougé et s'exécuter en preneur.
+- Le teneur de marché ne regarde que le prix milieu et son inventaire : pas
+  de signal de déséquilibre, pas de gestion de sa place dans la file.
+
+**Formules.** Relues dans l'article : Avellaneda & Stoikov (2008), éq. 3.17,
+3.18 et §3.3 ; Guéant, Lehalle & Fernandez-Tapia (2013), propositions 1 à 3
+et théorème 1.
+

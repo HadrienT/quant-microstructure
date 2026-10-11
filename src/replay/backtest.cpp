@@ -114,15 +114,25 @@ namespace quantMicrostructure
                 }
             }
 
-            void recordFill(OrderId order, Side side, Price price, Quantity qty, bool maker, const Quote &quote)
+            /// Books a fill at once. The strategy is told by reportFills, once
+            /// the venue has brought its book up to date: it must not requote
+            /// on a book that does not yet show the trade that filled it.
+            void recordFill(OrderId order, Side side, Price price, Quantity qty, bool maker)
             {
                 const double notional = static_cast<double>(price) * static_cast<double>(qty);
                 result_.position += side == Side::Buy ? qty : -qty;
                 result_.cash += side == Side::Buy ? -notional : notional;
                 result_.fees += notional * (maker ? result_.config.fees.maker : result_.config.fees.taker);
-                const Fill fill{now_, order, side, price, qty, maker};
-                result_.fills.push_back(fill);
-                strategy_.onFill(fill, view(quote), *this);
+                result_.fills.push_back(Fill{now_, order, side, price, qty, maker});
+            }
+
+            void reportFills(const Quote &quote)
+            {
+                for (; reported_ < result_.fills.size(); ++reported_)
+                {
+                    const Fill fill = result_.fills[reported_];
+                    strategy_.onFill(fill, view(quote), *this);
+                }
             }
 
             BacktestResult finish()
@@ -139,6 +149,7 @@ namespace quantMicrostructure
 
           private:
             OrderId next_id_;
+            std::size_t reported_{0};
         };
 
         // ---- Replay of a recorded stream ----
@@ -178,6 +189,7 @@ namespace quantMicrostructure
                     onEvent(event);
                     last_seq_ = event.seq;
                     seeQuote(quote());
+                    reportFills(quote());
                     strategy_.onMarket(view(quote()), *this);
                     // With no latency, a decision takes effect at once.
                     applyDue(now_);
@@ -196,6 +208,7 @@ namespace quantMicrostructure
                     pending_.pop_front();
                     now_ = std::max(now_, action.arrival);
                     apply(action);
+                    reportFills(quote());
                 }
             }
 
@@ -226,7 +239,7 @@ namespace quantMicrostructure
                     }
                     const Quantity traded = std::min(remaining, level.qty);
                     remaining -= traded;
-                    recordFill(action.id, action.side, level.price, traded, false, quote());
+                    recordFill(action.id, action.side, level.price, traded, false);
                 }
                 if (action.kind == ActionKind::Limit && remaining > 0)
                 {
@@ -255,7 +268,7 @@ namespace quantMicrostructure
                 }
                 order.remaining -= lots;
                 taken += static_cast<double>(lots);
-                recordFill(order.id, order.side, order.price, lots, true, quote());
+                recordFill(order.id, order.side, order.price, lots, true);
             }
 
             void dropFilled()
@@ -439,9 +452,10 @@ namespace quantMicrostructure
         class Simulation : public Session
         {
           public:
-            Simulation(ZeroIntelligenceSimulator &simulator, Strategy &strategy, const BacktestConfig &config)
+            Simulation(ZeroIntelligenceSimulator &simulator, Strategy &strategy, const BacktestConfig &config, std::vector<Event> *record)
                 : Session(strategy, config, ZeroIntelligenceSimulator::FirstParticipantId),
-                  simulator_(simulator)
+                  simulator_(simulator),
+                  record_(record)
             {
                 result_.market_reacts = true;
                 now_ = simulator_.now();
@@ -459,8 +473,10 @@ namespace quantMicrostructure
                     now_ = simulator_.now();
                     if (happened)
                     {
+                        keep(events);
                         makerFills(events);
                         seeQuote(quote());
+                        reportFills(quote());
                         strategy_.onMarket(view(quote()), *this);
                         continue;
                     }
@@ -471,6 +487,7 @@ namespace quantMicrostructure
                     const Action action = pending_.front();
                     pending_.pop_front();
                     apply(action);
+                    reportFills(quote());
                 }
                 seeQuote(quote());
                 return finish();
@@ -487,6 +504,7 @@ namespace quantMicrostructure
                     if (resting_.erase(action.id) > 0)
                     {
                         simulator_.cancel(action.id, events);
+                        keep(events);
                     }
                     return;
                 }
@@ -503,11 +521,12 @@ namespace quantMicrostructure
                 {
                     result = simulator_.submitMarket(action.side, action.qty, events);
                 }
+                keep(events);
                 for (const Event &event : events)
                 {
                     if (event.type == EventType::Trade)
                     {
-                        recordFill(action.id, action.side, event.price, event.qty, false, quote());
+                        recordFill(action.id, action.side, event.price, event.qty, false);
                     }
                 }
                 // Our own resting orders may have been on the other side.
@@ -532,11 +551,20 @@ namespace quantMicrostructure
                     {
                         resting_.erase(own);
                     }
-                    recordFill(event.order_id, side, event.price, event.qty, true, quote());
+                    recordFill(event.order_id, side, event.price, event.qty, true);
+                }
+            }
+
+            void keep(const std::vector<Event> &events)
+            {
+                if (record_ != nullptr)
+                {
+                    record_->insert(record_->end(), events.begin(), events.end());
                 }
             }
 
             ZeroIntelligenceSimulator &simulator_;
+            std::vector<Event> *record_;
             std::unordered_map<OrderId, Side> resting_;
         };
 
@@ -556,9 +584,9 @@ namespace quantMicrostructure
         throw std::invalid_argument("runReplay: a trades-only stream has no book to trade against");
     }
 
-    BacktestResult runSimulation(ZeroIntelligenceSimulator &simulator, Timestamp end, Strategy &strategy, const BacktestConfig &config)
+    BacktestResult runSimulation(ZeroIntelligenceSimulator &simulator, Timestamp end, Strategy &strategy, const BacktestConfig &config, std::vector<Event> *record)
     {
-        return Simulation(simulator, strategy, config).run(end);
+        return Simulation(simulator, strategy, config, record).run(end);
     }
 
 } // namespace quantMicrostructure
