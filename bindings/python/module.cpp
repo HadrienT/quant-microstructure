@@ -7,6 +7,9 @@
 #include "quantMicrostructure/book/order_book.hpp"
 #include "quantMicrostructure/core/build_info.hpp"
 #include "quantMicrostructure/core/event.hpp"
+#include "quantMicrostructure/execution/almgren_chriss.hpp"
+#include "quantMicrostructure/execution/schedule.hpp"
+#include "quantMicrostructure/execution/tca.hpp"
 #include "quantMicrostructure/feed/event_file.hpp"
 #include "quantMicrostructure/impact/kyle_lambda.hpp"
 #include "quantMicrostructure/impact/metaorder.hpp"
@@ -17,6 +20,7 @@
 #include "quantMicrostructure/measures/spread.hpp"
 #include "quantMicrostructure/measures/tape.hpp"
 #include "quantMicrostructure/measures/volatility.hpp"
+#include "quantMicrostructure/replay/backtest.hpp"
 #include "quantMicrostructure/sim/hawkes.hpp"
 #include "quantMicrostructure/sim/order_splitting.hpp"
 #include "quantMicrostructure/sim/queue_reactive.hpp"
@@ -766,6 +770,229 @@ namespace
             "the model can be manipulated.");
     }
 
+    py::dict scheduleDict(const TradeSchedule &schedule)
+    {
+        py::dict out;
+        out["holdings"] = toArray(schedule.holdings);
+        out["trades"] = toArray(schedule.trades);
+        out["tau"] = schedule.tau;
+        return out;
+    }
+
+    py::dict fillsDict(const std::vector<Fill> &fills)
+    {
+        py::dict out;
+        out["ts"] = column<std::int64_t>(fills, [](const Fill &f)
+                                         { return f.ts; });
+        out["order"] = column<std::uint64_t>(fills, [](const Fill &f)
+                                             { return f.order; });
+        out["sign"] = column<double>(fills, [](const Fill &f)
+                                     { return f.side == Side::Buy ? 1.0 : -1.0; });
+        out["price"] = column<std::int64_t>(fills, [](const Fill &f)
+                                            { return f.price; });
+        out["qty"] = column<std::int64_t>(fills, [](const Fill &f)
+                                          { return f.qty; });
+        out["maker"] = column<bool>(fills, [](const Fill &f)
+                                    { return f.maker; });
+        return out;
+    }
+
+    py::dict shortfallDict(const ShortfallBreakdown &b)
+    {
+        py::dict out;
+        out["delay"] = b.delay;
+        out["trading"] = b.trading;
+        out["opportunity"] = b.opportunity;
+        out["fees"] = b.fees;
+        out["total"] = b.total;
+        out["filled"] = b.filled;
+        out["average_price"] = b.average_price;
+        return out;
+    }
+
+    Side sideFromName(const std::string &name)
+    {
+        if (name == "buy")
+        {
+            return Side::Buy;
+        }
+        if (name == "sell")
+        {
+            return Side::Sell;
+        }
+        throw std::invalid_argument("side must be 'buy' or 'sell'");
+    }
+
+    void bindExecution(py::module_ &m)
+    {
+        const auto params = [](double sigma, double gamma, double eta, double epsilon)
+        { return AlmgrenChrissParams{sigma, gamma, eta, epsilon}; };
+
+        m.def(
+            "almgren_chriss_schedule",
+            [params](double shares, double horizon, std::size_t intervals, double sigma, double gamma, double eta, double epsilon, double risk_aversion)
+            { return scheduleDict(almgrenChrissSchedule(shares, horizon, intervals, params(sigma, gamma, eta, epsilon), risk_aversion)); },
+            py::arg("shares"), py::arg("horizon"), py::arg("intervals"), py::arg("sigma"), py::arg("gamma"), py::arg("eta"), py::arg("epsilon") = 0.0,
+            py::arg("risk_aversion") = 0.0,
+            "Optimal liquidation trajectory of Almgren & Chriss (2000), equations 17 and\n"
+            "18: 'holdings' (N + 1 values, from shares to 0) and 'trades' (N values).\n"
+            "sigma: volatility; gamma: permanent impact; eta: temporary impact; epsilon:\n"
+            "fixed cost per unit. risk_aversion 0 is TWAP.");
+
+        m.def(
+            "almgren_chriss_kappa",
+            [params](double sigma, double gamma, double eta, double risk_aversion, double tau)
+            { return almgrenChrissKappa(params(sigma, gamma, eta, 0.0), risk_aversion, tau); },
+            py::arg("sigma"), py::arg("gamma"), py::arg("eta"), py::arg("risk_aversion"), py::arg("tau"),
+            "Decay rate of the optimal trajectory; 1 / kappa is the time scale of the trade.");
+
+        m.def(
+            "schedule_cost",
+            [params](const DoubleArray &trades, double tau, double sigma, double gamma, double eta, double epsilon)
+            {
+                const TradeSchedule schedule = scheduleFromTrades(view(trades), tau);
+                py::dict out;
+                out["expected"] = expectedCost(schedule, params(sigma, gamma, eta, epsilon));
+                out["variance"] = costVariance(schedule, params(sigma, gamma, eta, epsilon));
+                return out;
+            },
+            py::arg("trades"), py::arg("tau"), py::arg("sigma"), py::arg("gamma"), py::arg("eta"), py::arg("epsilon") = 0.0,
+            "Expected cost and variance of any trade list in the Almgren-Chriss model\n"
+            "(equations 8 and 5).");
+
+        m.def(
+            "efficient_frontier",
+            [params](double shares, double horizon, std::size_t intervals, double sigma, double gamma, double eta, double epsilon, const DoubleArray &risk_aversions)
+            {
+                const std::vector<FrontierPoint> frontier = efficientFrontier(shares, horizon, intervals, params(sigma, gamma, eta, epsilon), view(risk_aversions));
+                py::dict out;
+                out["risk_aversion"] = column<double>(frontier, [](const FrontierPoint &f)
+                                                      { return f.lambda; });
+                out["expected"] = column<double>(frontier, [](const FrontierPoint &f)
+                                                 { return f.expected; });
+                out["variance"] = column<double>(frontier, [](const FrontierPoint &f)
+                                                 { return f.variance; });
+                return out;
+            },
+            py::arg("shares"), py::arg("horizon"), py::arg("intervals"), py::arg("sigma"), py::arg("gamma"), py::arg("eta"), py::arg("epsilon"),
+            py::arg("risk_aversions"), "Expected cost and variance of the optimal trajectory for each risk aversion.");
+
+        m.def(
+            "simulate_shortfall",
+            [params](const DoubleArray &trades, double tau, double sigma, double gamma, double eta, double epsilon, std::size_t paths, std::uint64_t seed)
+            {
+                Rng rng(seed);
+                return toArray(simulateShortfall(scheduleFromTrades(view(trades), tau), params(sigma, gamma, eta, epsilon), paths, rng));
+            },
+            py::arg("trades"), py::arg("tau"), py::arg("sigma"), py::arg("gamma"), py::arg("eta"), py::arg("epsilon"), py::arg("paths"), py::arg("seed"),
+            "Implementation shortfall of a trade list on simulated price paths of the\n"
+            "Almgren-Chriss model.");
+
+        m.def(
+            "twap_schedule", [](double shares, double horizon, std::size_t intervals)
+            { return scheduleDict(twapSchedule(shares, horizon, intervals)); },
+            py::arg("shares"), py::arg("horizon"), py::arg("intervals"));
+
+        m.def(
+            "vwap_schedule", [](double shares, double horizon, const DoubleArray &volume_profile)
+            { return scheduleDict(vwapSchedule(shares, horizon, view(volume_profile))); },
+            py::arg("shares"), py::arg("horizon"), py::arg("volume_profile"),
+            "In each interval, the share of the order equal to the share of the expected\n"
+            "volume.");
+
+        m.def(
+            "pov_schedule", [](double shares, double participation, const DoubleArray &market_volumes, double tau)
+            { return scheduleDict(povSchedule(shares, participation, view(market_volumes), tau)); },
+            py::arg("shares"), py::arg("participation"), py::arg("market_volumes"), py::arg("tau") = 1.0,
+            "A fixed share of the volume the market traded in each interval, until done;\n"
+            "the last holding is what could not be traded.");
+
+        m.def(
+            "implementation_shortfall",
+            [](const std::string &side, Quantity target, double decision_price, double arrival_price, double final_price, const DoubleArray &fill_prices, const DoubleArray &fill_quantities, double fees)
+            {
+                const std::span<const double> prices = view(fill_prices);
+                const std::span<const double> quantities = view(fill_quantities);
+                if (prices.size() != quantities.size())
+                {
+                    throw std::invalid_argument("implementation_shortfall: one quantity per fill price");
+                }
+                std::vector<Fill> fills;
+                for (std::size_t i = 0; i < prices.size(); ++i)
+                {
+                    Fill fill;
+                    fill.side = sideFromName(side);
+                    fill.price = static_cast<Price>(std::llround(prices[i]));
+                    fill.qty = static_cast<Quantity>(std::llround(quantities[i]));
+                    fills.push_back(fill);
+                }
+                ExecutionRecord record;
+                record.side = sideFromName(side);
+                record.target = target;
+                record.decision_price = decision_price;
+                record.arrival_price = arrival_price;
+                record.final_price = final_price;
+                record.fees = fees;
+                return shortfallDict(implementationShortfall(record, fills));
+            },
+            py::arg("side"), py::arg("target"), py::arg("decision_price"), py::arg("arrival_price"), py::arg("final_price"), py::arg("fill_prices"),
+            py::arg("fill_quantities"), py::arg("fees") = 0.0,
+            "Implementation shortfall of an order, split into delay, trading, opportunity\n"
+            "and fees, in ticks times lots. Fill prices are whole ticks, quantities whole\n"
+            "lots.");
+
+        m.def(
+            "execute_schedule",
+            [](const std::string &side, const DoubleArray &trades, double interval, double limit_rate, double market_rate, double cancel_rate, Price window, double warmup, std::uint64_t seed, double latency, double taker_fee)
+            {
+                ZeroIntelligenceParams market;
+                market.limit_rate = limit_rate;
+                market.market_rate = market_rate;
+                market.cancel_rate = cancel_rate;
+                market.window = window;
+                market.initial_price = 10'000;
+                ZeroIntelligenceSimulator sim(market, seed);
+                std::vector<Event> events;
+                sim.runUntil(nanos(warmup), events);
+
+                const std::span<const double> slices = view(trades);
+                const std::vector<Quantity> lots = roundToLots(scheduleFromTrades(slices, interval));
+                Quantity target = 0;
+                for (const Quantity lot : lots)
+                {
+                    target += lot;
+                }
+                ScheduleExecutor executor(sideFromName(side), lots, nanos(warmup), nanos(interval));
+                BacktestConfig config;
+                config.latency = nanos(latency);
+                config.fees.taker = taker_fee;
+                const Timestamp end = nanos(warmup + interval * static_cast<double>(slices.size() + 1));
+                const BacktestResult result = runSimulation(sim, end, executor, config);
+
+                ExecutionRecord record;
+                record.side = sideFromName(side);
+                record.target = target;
+                record.decision_price = executor.arrivalMid();
+                record.arrival_price = executor.arrivalMid();
+                record.final_price = result.mark;
+                record.fees = result.fees;
+                py::dict out;
+                out["fills"] = fillsDict(result.fills);
+                out["shortfall"] = shortfallDict(implementationShortfall(record, result.fills));
+                out["arrival_price"] = executor.arrivalMid();
+                out["final_price"] = result.mark;
+                out["target"] = target;
+                return out;
+            },
+            py::arg("side"), py::arg("trades"), py::arg("interval"), py::arg("limit_rate"), py::arg("market_rate"), py::arg("cancel_rate"), py::arg("window"),
+            py::arg("warmup") = 60.0, py::arg("seed") = 1, py::arg("latency") = 0.0, py::arg("taker_fee") = 0.0,
+            "Carries a trade list out in a zero-intelligence market, one market order per\n"
+            "slice every `interval` seconds after `warmup` seconds, and returns the fills\n"
+            "and the implementation shortfall against the mid at the first slice. The\n"
+            "market reacts to the orders only through its book. One market, one draw:\n"
+            "average over seeds before reading anything into it.");
+    }
+
 } // namespace
 
 PYBIND11_MODULE(quantmicrostructure, m)
@@ -793,4 +1020,5 @@ PYBIND11_MODULE(quantmicrostructure, m)
     bindSimulators(m);
     bindMeasures(m);
     bindImpact(m);
+    bindExecution(m);
 }

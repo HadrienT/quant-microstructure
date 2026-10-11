@@ -437,3 +437,59 @@ est à nuancer.
 - *Présenter l'exposant mesuré dans l'intelligence zéro comme une
   vérification de la loi en racine carrée* : ce n'en est pas une.
 
+---
+
+## ADR-013 — L'exécution : le modèle, les échéanciers, l'analyse des coûts
+
+**Décision.** Le lot M7 livre dans `execution/` :
+
+- **Almgren & Chriss (2000) dans sa forme discrète**, avec la notation de
+  l'article : un programme de **vente** de $X$ titres en $N$ intervalles de
+  longueur $\tau$. Trajectoire optimale, coût attendu, variance, frontière
+  efficiente, et simulation du modèle de prix de l'article ;
+- les échéanciers usuels : TWAP, VWAP (un profil de volume attendu), POV (une
+  fraction du volume observé, qui peut ne pas finir) ;
+- un exécuteur (`ScheduleExecutor`) qui déroule un échéancier dans le backtest
+  du lot M5, par un ordre au marché au début de chaque tranche ;
+- le déficit d'exécution et sa décomposition (retard, exécution, opportunité,
+  frais), et le VWAP du marché comme référence.
+
+**Pourquoi la forme discrète.** C'est celle de l'article, et celle qu'on
+exécute : $\kappa$ y est la solution de
+$\frac{2}{\tau^2}(\cosh(\kappa\tau) - 1) = \lambda\sigma^2/\tilde\eta$ avec
+$\tilde\eta = \eta - \gamma\tau/2$, et ne vaut $\sqrt{\lambda\sigma^2/\eta}$
+(la formule du §8.2 du compagnon) qu'à la limite $\tau \to 0$. Coder la
+formule continue sur une grille grossière donnerait une trajectoire qui
+n'est pas optimale, ce qu'un test vérifie.
+
+**Ce que les tests retrouvent.** Aversion nulle : la droite, qui est le TWAP.
+Le coût simulé a la moyenne et la variance des formules fermées (éq. 20).
+Aucune autre trajectoire ne fait mieux. La frontière est décroissante et
+convexe, de pente $-\lambda$. Plus d'aversion vend plus vite à chaque date.
+Dans le simulateur, un ordre découpé coûte moins par lot qu'un bloc.
+
+**Limites.**
+- Le modèle suppose un impact **linéaire** dans la vitesse d'exécution, ce
+  que la loi en racine carrée contredit, et une marche aléatoire arithmétique
+  sans dérive. La trajectoire ne réagit pas au prix.
+- Ses paramètres ($\sigma$, $\gamma$, $\eta$) ne sont calibrés sur rien : il
+  n'y a pas encore de données.
+- **Une seule tactique** : un ordre au marché par tranche. Le second étage du
+  §8.3 (ordre limité ou au marché, à quel prix, quand annuler) n'est pas
+  écrit ; il relève du queue-reactive, qui n'est pas un lieu d'exécution.
+- L'impact transitoire d'Obizhaeva & Wang et l'impact non linéaire d'Almgren
+  (2003) ne sont pas codés.
+- L'exécution dans le simulateur se lit **en moyenne sur des graines** : une
+  seule trajectoire est dominée par le hasard du prix.
+
+**Formules.** Relues dans l'article : Almgren & Chriss (2000), éq. 1 à 13 et
+16 à 20, dans une copie de l'article hébergée par un tiers. **Non relu** :
+Perold (1988) ; la décomposition du déficit est celle du §8.4 du compagnon,
+dérivée dans le commentaire de `execution/tca.hpp` et vérifiée contre sa
+définition (portefeuille papier moins portefeuille réel).
+
+**Écarté.**
+- *Séparer « fourchette » et « impact » dans le coût d'exécution* : il faut
+  le prix milieu juste avant chaque exécution, que `Fill` ne porte pas. À
+  ajouter si une stratégie le demande.
+

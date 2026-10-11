@@ -54,6 +54,9 @@ add_library(quantMicrostructure
   src/impact/kyle_lambda.cpp
   src/impact/metaorder.cpp
   src/impact/round_trip.cpp
+  src/execution/almgren_chriss.cpp
+  src/execution/schedule.cpp
+  src/execution/tca.cpp
 )
 
 set_target_properties(quantMicrostructure PROPERTIES
