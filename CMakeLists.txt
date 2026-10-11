@@ -57,6 +57,8 @@ add_library(quantMicrostructure
   src/execution/almgren_chriss.cpp
   src/execution/schedule.cpp
   src/execution/tca.cpp
+  src/mm/quoting.cpp
+  src/mm/market_maker.cpp
 )
 
 set_target_properties(quantMicrostructure PROPERTIES

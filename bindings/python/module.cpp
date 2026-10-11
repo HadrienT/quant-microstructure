@@ -20,6 +20,8 @@
 #include "quantMicrostructure/measures/spread.hpp"
 #include "quantMicrostructure/measures/tape.hpp"
 #include "quantMicrostructure/measures/volatility.hpp"
+#include "quantMicrostructure/mm/market_maker.hpp"
+#include "quantMicrostructure/mm/quoting.hpp"
 #include "quantMicrostructure/replay/backtest.hpp"
 #include "quantMicrostructure/sim/hawkes.hpp"
 #include "quantMicrostructure/sim/order_splitting.hpp"
@@ -993,6 +995,219 @@ namespace
             "average over seeds before reading anything into it.");
     }
 
+    py::dict quotesDict(const Quotes &quotes)
+    {
+        py::dict out;
+        out["bid"] = quotes.bid;
+        out["ask"] = quotes.ask;
+        return out;
+    }
+
+    /// What a market-making run returns: the fills, the account, where the
+    /// P&L came from, the markouts, and the assumptions behind them.
+    py::dict makerReport(const BacktestResult &result, const Tape &tape, const DoubleArray &markout_horizons)
+    {
+        std::vector<Timestamp> horizons;
+        for (const double seconds : view(markout_horizons))
+        {
+            horizons.push_back(nanos(seconds));
+        }
+        const MakerPnl pnl = makerPnl(result, tape);
+        const std::vector<Markout> marks = markouts(result.fills, tape, horizons);
+
+        py::dict decomposition;
+        decomposition["spread"] = pnl.spread;
+        decomposition["inventory"] = pnl.inventory;
+        decomposition["fees"] = pnl.fees;
+        decomposition["total"] = pnl.total;
+
+        py::dict markout;
+        markout["horizon"] = column<double>(marks, [](const Markout &x)
+                                            { return static_cast<double>(x.horizon) / NanosPerSecond; });
+        markout["mean"] = column<double>(marks, [](const Markout &x)
+                                         { return x.mean; });
+        markout["lots"] = column<std::int64_t>(marks, [](const Markout &x)
+                                               { return x.lots; });
+
+        py::dict assumptions;
+        assumptions["latency"] = static_cast<double>(result.config.latency) / NanosPerSecond;
+        assumptions["queue_model"] = result.config.queue_model == QueueModel::ProRata ? "pro_rata" : "pessimistic";
+        assumptions["maker_fee"] = result.config.fees.maker;
+        assumptions["taker_fee"] = result.config.fees.taker;
+        assumptions["market_reacts"] = result.market_reacts;
+
+        py::dict out;
+        out["fills"] = fillsDict(result.fills);
+        out["position"] = result.position;
+        out["pnl"] = result.pnl;
+        out["mark"] = result.mark;
+        out["orders_sent"] = result.orders_sent;
+        out["cancels_sent"] = result.cancels_sent;
+        out["decomposition"] = decomposition;
+        out["markouts"] = markout;
+        out["assumptions"] = assumptions;
+        return out;
+    }
+
+    TickQuotePolicy stationaryPolicy(const QuotingParams &params, bool skew)
+    {
+        return [params, skew](Quantity inventory, Timestamp)
+        { return glftApproximateQuotes(skew ? static_cast<double>(inventory) : 0.0, params); };
+    }
+
+    void bindMarketMaking(py::module_ &m)
+    {
+        m.def(
+            "avellaneda_stoikov_quotes",
+            [](double inventory, double sigma, double gamma, double k, double A, double time_left)
+            {
+                const QuotingParams params{sigma, gamma, k, A};
+                py::dict out = quotesDict(avellanedaStoikovQuotes(inventory, params, time_left));
+                out["reservation_shift"] = avellanedaStoikovReservationPrice(0.0, inventory, params, time_left);
+                out["spread"] = avellanedaStoikovSpread(params, time_left);
+                return out;
+            },
+            py::arg("inventory"), py::arg("sigma"), py::arg("gamma"), py::arg("k"), py::arg("A"), py::arg("time_left"),
+            "Avellaneda & Stoikov (2008), equations 3.17 and 3.18: distances of the bid\n"
+            "and of the ask from the reference price, the shift of the reservation price\n"
+            "(-q gamma sigma^2 (T - t)) and the total spread.");
+
+        m.def(
+            "glft_approximate_quotes",
+            [](double inventory, double sigma, double gamma, double k, double A)
+            { return quotesDict(glftApproximateQuotes(inventory, QuotingParams{sigma, gamma, k, A})); },
+            py::arg("inventory"), py::arg("sigma"), py::arg("gamma"), py::arg("k"), py::arg("A"),
+            "Closed-form stationary quotes of Guéant, Lehalle & Fernandez-Tapia (2013):\n"
+            "they depend on the inventory alone.");
+
+        m.def(
+            "glft_exact_quotes",
+            [](double sigma, double gamma, double k, double A, int inventory_limit, double time_left)
+            {
+                const GlftSolution solution(QuotingParams{sigma, gamma, k, A}, inventory_limit, time_left);
+                std::vector<int> inventories;
+                for (int q = -inventory_limit; q <= inventory_limit; ++q)
+                {
+                    inventories.push_back(q);
+                }
+                py::dict out;
+                out["inventory"] = column<std::int64_t>(inventories, [](int q)
+                                                        { return q; });
+                out["bid"] = column<double>(inventories, [&](int q)
+                                            { return solution.quotes(q).bid; });
+                out["ask"] = column<double>(inventories, [&](int q)
+                                            { return solution.quotes(q).ask; });
+                return out;
+            },
+            py::arg("sigma"), py::arg("gamma"), py::arg("k"), py::arg("A"), py::arg("inventory_limit"), py::arg("time_left"),
+            "Exact quotes of the same problem with a bounded inventory, for every\n"
+            "inventory from -limit to +limit. The bid at +limit and the ask at -limit are\n"
+            "infinite: nothing is quoted there.");
+
+        m.def(
+            "simulate_quoting",
+            [](const std::string &policy, double sigma, double gamma, double k, double A, std::size_t paths, std::uint64_t seed, double s0, double horizon, double dt)
+            {
+                QuotingSimulation simulation;
+                simulation.params = QuotingParams{sigma, gamma, k, A};
+                simulation.s0 = s0;
+                simulation.horizon = horizon;
+                simulation.dt = dt;
+                const QuotingParams params = simulation.params;
+                QuotePolicy chosen;
+                if (policy == "inventory")
+                {
+                    chosen = [params](double q, double left)
+                    { return avellanedaStoikovQuotes(q, params, left); };
+                }
+                else if (policy == "symmetric")
+                {
+                    chosen = [params](double, double left)
+                    { return symmetricQuotes(params, left); };
+                }
+                else if (policy == "glft")
+                {
+                    chosen = [params](double q, double)
+                    { return glftApproximateQuotes(q, params); };
+                }
+                else
+                {
+                    throw std::invalid_argument("policy must be 'inventory', 'symmetric' or 'glft'");
+                }
+                Rng rng(seed);
+                const std::vector<QuotingOutcome> outcomes = simulateQuoting(simulation, chosen, paths, rng);
+                py::dict out;
+                out["pnl"] = column<double>(outcomes, [](const QuotingOutcome &o)
+                                            { return o.pnl; });
+                out["final_inventory"] = column<double>(outcomes, [](const QuotingOutcome &o)
+                                                        { return o.final_inventory; });
+                return out;
+            },
+            py::arg("policy"), py::arg("sigma"), py::arg("gamma"), py::arg("k"), py::arg("A"), py::arg("paths"), py::arg("seed"),
+            py::arg("s0") = 100.0, py::arg("horizon") = 1.0, py::arg("dt") = 0.005,
+            "The simulation of Avellaneda & Stoikov (2008), section 3.3: final P&L and\n"
+            "inventory of each path. policy: 'inventory' (their strategy), 'symmetric'\n"
+            "(same spread around the reference price) or 'glft' (stationary quotes).");
+
+        m.def(
+            "market_maker_replay",
+            [](const EventStream &stream, double sigma, double gamma, double k, double A, bool skew, Quantity order_size, Quantity inventory_limit, double latency, const std::string &queue_model, double maker_fee, double taker_fee, const DoubleArray &markout_horizons)
+            {
+                BacktestConfig config;
+                config.latency = nanos(latency);
+                if (queue_model == "pro_rata")
+                {
+                    config.queue_model = QueueModel::ProRata;
+                }
+                else if (queue_model != "pessimistic")
+                {
+                    throw std::invalid_argument("queue_model must be 'pessimistic' or 'pro_rata'");
+                }
+                config.fees.maker = maker_fee;
+                config.fees.taker = taker_fee;
+                MarketMaker maker(stationaryPolicy(QuotingParams{sigma, gamma, k, A}, skew), MarketMakerConfig{order_size, inventory_limit});
+                const BacktestResult result = runReplay(stream.events, stream.kind, maker, config);
+                return makerReport(result, buildTape(stream.events, stream.kind), markout_horizons);
+            },
+            py::arg("stream"), py::arg("sigma"), py::arg("gamma"), py::arg("k"), py::arg("A"), py::arg("skew") = true, py::arg("order_size") = 1,
+            py::arg("inventory_limit") = 10, py::arg("latency") = 0.0, py::arg("queue_model") = "pessimistic", py::arg("maker_fee") = 0.0,
+            py::arg("taker_fee") = 0.0, py::arg("markout_horizons") = std::vector<double>{0.0, 1.0, 10.0},
+            "A market maker with stationary (GLFT) quotes against a recorded stream.\n"
+            "Distances are in ticks, time in seconds. The other participants do NOT react\n"
+            "to its orders; the result depends on `latency` and, for an 'l2' stream, on\n"
+            "`queue_model`: show it for several values of both.");
+
+        m.def(
+            "market_maker_simulation",
+            [](double limit_rate, double market_rate, double cancel_rate, Price window, double duration, std::uint64_t seed, double sigma, double gamma, double k, double A, bool skew, Quantity order_size, Quantity inventory_limit, double warmup, double latency, double maker_fee, double taker_fee, const DoubleArray &markout_horizons)
+            {
+                ZeroIntelligenceParams market;
+                market.limit_rate = limit_rate;
+                market.market_rate = market_rate;
+                market.cancel_rate = cancel_rate;
+                market.window = window;
+                market.initial_price = 10'000;
+                ZeroIntelligenceSimulator sim(market, seed);
+                std::vector<Event> events;
+                sim.runUntil(nanos(warmup), events);
+                BacktestConfig config;
+                config.latency = nanos(latency);
+                config.fees.maker = maker_fee;
+                config.fees.taker = taker_fee;
+                MarketMaker maker(stationaryPolicy(QuotingParams{sigma, gamma, k, A}, skew), MarketMakerConfig{order_size, inventory_limit});
+                const BacktestResult result = runSimulation(sim, nanos(warmup + duration), maker, config, &events);
+                return makerReport(result, buildTape(events, StreamKind::OrderByOrder), markout_horizons);
+            },
+            py::arg("limit_rate"), py::arg("market_rate"), py::arg("cancel_rate"), py::arg("window"), py::arg("duration"), py::arg("seed"),
+            py::arg("sigma"), py::arg("gamma"), py::arg("k"), py::arg("A"), py::arg("skew") = true, py::arg("order_size") = 1,
+            py::arg("inventory_limit") = 10, py::arg("warmup") = 60.0, py::arg("latency") = 0.0, py::arg("maker_fee") = 0.0, py::arg("taker_fee") = 0.0,
+            py::arg("markout_horizons") = std::vector<double>{0.0, 1.0, 10.0},
+            "The same market maker inside a zero-intelligence market, which reacts to its\n"
+            "orders through the book. That flow is never informed: quoting at the best\n"
+            "price earns the spread at little risk there, which says nothing of a real\n"
+            "market.");
+    }
+
 } // namespace
 
 PYBIND11_MODULE(quantmicrostructure, m)
@@ -1021,4 +1236,5 @@ PYBIND11_MODULE(quantmicrostructure, m)
     bindMeasures(m);
     bindImpact(m);
     bindExecution(m);
+    bindMarketMaking(m);
 }

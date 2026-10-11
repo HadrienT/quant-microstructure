@@ -11,8 +11,8 @@ It is built around the three questions of the field:
 | What does a trade cost? | Market impact (response function, propagator, square-root law), optimal execution (Almgren-Chriss, TWAP, VWAP, POV), transaction cost analysis |
 | What does quoting earn? | Market making (Avellaneda-Stoikov, Guéant-Lehalle-Fernandez-Tapia), markouts, a book-level backtest with latency and queue position |
 
-**Status: everything but market making and real data.** Work packages M0
-(build chain) and M2 to M7 are done:
+**Status: every model is written and tested on simulated markets; none has
+seen real data.** Work packages M0 (build chain) and M2 to M8 are done:
 
 - integer types and the single event format, an event file reader and writer
   with gap detection;
@@ -33,10 +33,13 @@ It is built around the three questions of the field:
 - optimal execution: Almgren-Chriss trajectories and efficient frontier,
   TWAP, VWAP and POV schedules, carried out in the backtest, and
   implementation shortfall;
-- simulators, measures, impact and execution available from Python.
+- market making: Avellaneda-Stoikov and Guéant-Lehalle-Fernandez-Tapia
+  quotes, a market maker for the backtest, P&L decomposition and markouts;
+- all of it available from Python.
 
-Nothing has been measured on real data yet, no parameter is calibrated, and
-there is no market-making model. One expected result is **not** obtained: the
+**Nothing has been measured on real data yet, and no parameter is
+calibrated.** The capture of a real order book feed (work package M1, in
+`data-ingest`) is the missing piece. One expected result is **not** obtained: the
 zero-intelligence simulator does not reproduce the square-root law of
 metaorder impact (see ADR-012 in `blueprint/decisions.md`).
 
@@ -89,10 +92,24 @@ tape = qm.build_tape(market)              # quotes and trades
 qm.spread_decomposition(tape, horizon=1.0)  # effective = realized + impact
 qm.imbalance_next_move(tape, bins=5)["probability_up"]
 qm.response_function(tape, max_lag=50)
+
+# A market maker on a recording: the result comes with its assumptions, and
+# is to be shown for several latencies and both queue models.
+recording = qm.aggregate(market)
+for latency in (0.0, 0.05, 2.0):
+    for queue_model in ("pessimistic", "pro_rata"):
+        report = qm.market_maker_replay(
+            recording, sigma=0.3, gamma=0.5, k=4.0, A=0.2,
+            latency=latency, queue_model=queue_model,
+        )
+        print(report["assumptions"], report["pnl"], report["decomposition"])
 ```
 
-Prices are in ticks, quantities in lots, timestamps in nanoseconds. These
-figures come from a simulator, not from a market.
+Prices are in ticks, quantities in lots, timestamps in nanoseconds; the
+Python functions take durations in seconds. These figures come from a
+simulator, not from a market. In particular, quoting at the best price is
+almost riskless in the zero-intelligence simulator, whose flow is never
+informed: that P&L says nothing about a real market.
 
 ## License
 
