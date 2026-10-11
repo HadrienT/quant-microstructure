@@ -7,6 +7,11 @@ add_executable(quantMicrostructure_tests
   testOrderBook.cpp
   testMatchingEngine.cpp
   testBookProperties.cpp
+  testRng.cpp
+  testZeroIntelligence.cpp
+  testHawkes.cpp
+  testToyModels.cpp
+  testQueueReactive.cpp
 )
 target_link_libraries(quantMicrostructure_tests
   PRIVATE

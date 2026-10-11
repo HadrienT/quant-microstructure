@@ -38,6 +38,11 @@ add_library(quantMicrostructure
   src/book/level_book.cpp
   src/book/level_aggregator.cpp
   src/matching/matching_engine.cpp
+  src/sim/rng.cpp
+  src/sim/zero_intelligence.cpp
+  src/sim/hawkes.cpp
+  src/sim/toy_models.cpp
+  src/sim/queue_reactive.cpp
 )
 
 set_target_properties(quantMicrostructure PROPERTIES

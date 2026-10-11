@@ -220,3 +220,53 @@ Ces deux pistes ne se rouvrent qu'avec un benchmark sur un flux capturé
 (lot M1) : le flux aléatoire actuel n'a que 41 niveaux de prix et ne dit rien
 du coût de l'arbre sur un vrai carnet.
 
+---
+
+## ADR-009 — Ce que les simulateurs sont, et où ils s'écartent des articles
+
+**Décision.** Le lot M4 livre quatre familles de simulateurs dans `sim/`, avec
+un générateur aléatoire commun (`sim/rng.hpp` : `std::mt19937_64`, dont la
+suite est fixée par la norme, et des lois écrites à la main parce que celles
+de la bibliothèque standard ne sont pas spécifiées).
+
+| Simulateur | Sortie | Régime | Écart par rapport à l'article |
+|---|---|---|---|
+| Intelligence zéro (Smith et al. 2003) | flux ordre par ordre, à travers le moteur d'appariement | aucun supposé | ordres déposés sur une **fenêtre finie** de prix, pas sur un intervalle semi-infini : le carnet peut se vider, et un côté vide est remplacé par son dernier meilleur prix |
+| Hawkes, noyau exponentiel | instants d'arrivée en secondes | sans objet | **univarié** seulement ; pas encore un flux d'événements |
+| Queue-reactive (Huang, Lehalle & Rosenbaum 2015), modèles I et III | flux **agrégé** (`Level`, `Trade`) | **gros tick** | une seule taille d'événement pour toutes les files (l'article en a une par file) ; tailles de file bornées par la longueur des tables d'intensité |
+| Roll, Kyle (une période), Glosten-Milgrom | transactions pour Roll ; tableaux de nombres pour les deux autres | sans objet | aucun |
+
+**Pourquoi ces écarts.** La fenêtre finie est ce qui rend l'intelligence zéro
+simulable ; elle ne change pas la profondeur loin du meilleur prix, que le
+test retrouve ($\alpha/\delta$). La taille unique et la borne des files
+simplifient le queue-reactive sans toucher à sa loi invariante, que le test
+retrouve aussi. Le Hawkes multivarié n'est utile qu'au lot M6 (propagateur) :
+il s'écrira là, avec son besoin.
+
+**Formules relues dans l'article, et celles qui ne l'ont pas été.**
+
+- Relues (les équations sont citées dans les commentaires) : vraisemblance
+  récursive, amincissement d'Ogata et changement de temps dans Laub, Taimre &
+  Pollett (2015) ; intensité moyenne dans Bacry, Mastromatteo & Muzy (2015) ;
+  modèle et profondeur asymptotique dans Smith et al. (2003) ; modèles I et
+  III et loi invariante dans Huang, Lehalle & Rosenbaum (2015).
+- **Non relues** : Roll (1984), Kyle (1985) et Glosten & Milgrom (1985), dont
+  les articles ne sont pas en accès libre. Leurs formules sont dérivées dans
+  les commentaires de `sim/toy_models.hpp` et vérifiées par simulation ;
+  aucun numéro d'équation n'est cité. Même chose pour Ogata (1981), lu à
+  travers Laub et al. À relire dans les originaux quand ils seront
+  disponibles.
+
+**Déterminisme.** Une graine donne partout les mêmes entiers. Les tirages en
+virgule flottante passent par `std::log`, `std::sqrt` et `std::cos` : ils sont
+identiques là où la bibliothèque mathématique arrondit de la même façon, ce
+qui n'est pas garanti d'une plateforme à l'autre.
+
+**Écarté.**
+- *Les lois de `<random>`* (`std::exponential_distribution`, etc.) : leur
+  algorithme dépend de la bibliothèque standard, donc la même graine ne
+  donnerait pas le même flux avec un autre compilateur.
+- *Sortir le queue-reactive en flux ordre par ordre* : le modèle ne connaît
+  que des quantités par prix ; inventer des ordres ajouterait une hypothèse
+  de file que l'article ne fait pas.
+

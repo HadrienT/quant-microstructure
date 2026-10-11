@@ -786,6 +786,7 @@ participant en colocation.
 | Hawkes, « Spectra of Some Self-Exciting and Mutually Exciting Point Processes », *Biometrika* 58(1), 1971 | §6.3 |
 | Ogata, « On Lewis' Simulation Method for Point Processes », *IEEE Transactions on Information Theory* 27(1), 1981 | §6.3 |
 | Bacry, Mastromatteo & Muzy, « Hawkes Processes in Finance », *Market Microstructure and Liquidity* 1(1), 2015 | §6.3 |
+| Laub, Taimre & Pollett, « Hawkes Processes », arXiv:1507.02822, 2015 (synthèse en accès libre : vraisemblance, simulation, changement de temps ; c'est elle que cite le code de `sim/hawkes`) | §6.3 |
 | Filimonov & Sornette, « Quantifying Reflexivity in Financial Markets: Toward a Prediction of Flash Crashes », *Physical Review E* 85, 2012 | §6.3 |
 
 **Mesure à haute fréquence**
