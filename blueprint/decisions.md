@@ -145,3 +145,78 @@ marché est une course de vitesse perdue d'avance (§12 du compagnon).
 - *Un mode « papier » branché sur une place* : pédagogique, mais c'est déjà
   une connexion authentifiée et un pas vers le réel. Si le mainteneur le veut
   un jour, c'est un nouvel ADR et un dépôt séparé.
+
+---
+
+## ADR-007 — Le format d'événement
+
+**Décision.** Un événement est un enregistrement de taille fixe
+(`core/event.hpp`) : deux horodatages (`ts` de la place, `ts_recv` de
+réception), un numéro de séquence, un identifiant d'ordre, un prix, une
+quantité, un type et un côté. Cinq types : `Add`, `Cancel`, `Trade` pour un
+flux ordre par ordre (L3) ; `Level`, `Trade` pour un flux agrégé (L2) ;
+`Clear` pour les deux. Sur disque : un en-tête de 8 octets puis des
+enregistrements de 50 octets, entiers petit-boutistes écrits champ par champ.
+
+Conventions :
+
+- le `side` d'un `Trade` est celui de **l'agresseur** (le $\varepsilon$ du
+  compagnon : $+1$ pour un achat) ; l'ordre en attente est du côté opposé, et
+  le prix est le sien ;
+- un `Level` porte la quantité **totale** au prix, pas une variation ; zéro
+  supprime le niveau ;
+- dans un flux agrégé, un `Trade` n'est qu'une information : c'est le `Level`
+  qui le suit qui change le carnet ;
+- deux événements consécutifs ont des numéros qui se suivent ; tout autre
+  écart est un trou.
+
+**Pourquoi.** Trois messages suffisent à décrire un marché à carnet (§2.1 du
+compagnon), et un flux agrégé n'en demande qu'un de plus. Une taille fixe se
+lit sans analyse syntaxique, et l'écriture champ par champ rend un fichier
+indépendant de la machine et du compilateur, ce que demande le déterminisme.
+Les deux horodatages sont ceux que le §15 du compagnon demande de garder.
+
+**Écarté.**
+- *Écrire la structure telle quelle en mémoire* : plus court, mais les octets
+  de remplissage et le boutisme dépendraient du compilateur.
+- *Un type par message, dans un `std::variant`* : plus sûr à la lecture, mais
+  la taille n'est plus fixe et chaque consommateur doit visiter le variant.
+- *Des types forts pour `Price` et `Quantity`* : ils empêcheraient de passer
+  l'un pour l'autre. Ce sont de simples alias pour l'instant ; à reconsidérer
+  si l'erreur se produit.
+
+**Ce que le format ne porte pas, et qui pourra demander une version 2.**
+- L'identifiant de l'ordre **agresseur** d'une transaction. Le moteur le
+  rend à l'appelant (`SubmitResult`), le flux ne le garde pas.
+- La compression et le découpage en fichiers, qui relèvent de l'ADR-004.
+
+---
+
+## ADR-008 — La structure de données du carnet
+
+**Décision.** Le carnet ordre par ordre (`book/order_book.hpp`) est fait de
+trois structures : par côté, une table ordonnée (`std::map`) du prix vers le
+niveau ; par niveau, une liste doublement chaînée des ordres, du plus ancien
+au plus récent ; une table de hachage de l'identifiant vers l'ordre. Les
+ordres vivent dans un vecteur et se chaînent par indice ; chacun garde un
+itérateur vers son niveau.
+
+**Pourquoi.** Les opérations fréquentes sont, dans l'ordre : ajouter un
+ordre, en annuler un, lire le meilleur prix, exécuter le premier de la file.
+Avec cette structure elles sont en temps constant, sauf l'ouverture d'un
+nouveau niveau de prix, logarithmique dans le nombre de niveaux. C'est la
+structure la plus simple qui ait ces complexités, et le premier benchmark
+(`benchmarks/RESULTS.md`) donne le point de départ contre lequel mesurer la
+suite.
+
+**Écarté pour l'instant.**
+- *Un tableau indexé par le prix en ticks* : accès au niveau sans arbre, mais
+  il faut borner la plage de prix, ce qui convient mal à un actif à petit
+  tick dont le prix se déplace de milliers de ticks.
+- *Des tables de hachage et des allocateurs spécialisés* : sans mesure sur un
+  flux réel, on ne sait pas ce qu'ils rapporteraient.
+
+Ces deux pistes ne se rouvrent qu'avec un benchmark sur un flux capturé
+(lot M1) : le flux aléatoire actuel n'a que 41 niveaux de prix et ne dit rien
+du coût de l'arbre sur un vrai carnet.
+

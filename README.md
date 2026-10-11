@@ -11,10 +11,12 @@ It is built around the three questions of the field:
 | What does a trade cost? | Market impact (response function, propagator, square-root law), optimal execution (Almgren-Chriss, TWAP, VWAP, POV), transaction cost analysis |
 | What does quoting earn? | Market making (Avellaneda-Stoikov, Guéant-Lehalle-Fernandez-Tapia), markouts, a book-level backtest with latency and queue position |
 
-**Status: build skeleton only.** The toolchain, the tests, the benchmark
-harness, the wheel and the CI are in place (work package M0); there is no
-domain code yet. The next work package is M2, the order book and the matching
-engine.
+**Status: order book and matching engine.** Work packages M0 (build chain)
+and M2 are done: integer types and the single event format, an event file
+reader and writer with gap detection, an order-by-order (L3) book, a
+price-level (L2) book, and a price-time matching engine, with property tests
+and a first [benchmark](benchmarks/RESULTS.md). Nothing is measured on real
+data yet, and there is no simulator, execution or market-making model.
 
 **This is a study repository, not a trading system.** It never connects to an
 exchange to send an order.

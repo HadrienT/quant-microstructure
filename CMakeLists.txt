@@ -32,6 +32,12 @@ configure_file(
 
 add_library(quantMicrostructure
   ${PROJECT_BINARY_DIR}/generated/build_info.cpp
+  src/feed/event_file.cpp
+  src/feed/sequence_tracker.cpp
+  src/book/order_book.cpp
+  src/book/level_book.cpp
+  src/book/level_aggregator.cpp
+  src/matching/matching_engine.cpp
 )
 
 set_target_properties(quantMicrostructure PROPERTIES
