@@ -270,3 +270,54 @@ qui n'est pas garanti d'une plateforme à l'autre.
   que des quantités par prix ; inventer des ordres ajouterait une hypothèse
   de file que l'article ne fait pas.
 
+---
+
+## ADR-010 — La bande, et ce que les mesures supposent
+
+**Décision.** Les mesures de `measures/` ne lisent pas un flux d'événements
+mais une **bande** (`measures/tape.hpp`) : la suite des cotations (meilleurs
+prix et quantités, à chaque changement) et la suite des transactions, tirées
+d'un flux par `buildTape`. Un flux ordre par ordre et le flux agrégé du même
+marché donnent la même bande (c'est un test).
+
+Conventions :
+
+- **une transaction = un ordre agressif.** Les événements `Trade` de même
+  horodatage et de même côté sont regroupés, avec leur prix moyen pondéré,
+  comme le font Bouchaud, Gefen, Potters & Wyart (2004, §2.1) ;
+- **le prix d'une transaction est comparé au milieu qui la précède**, jamais à
+  une cotation qu'elle a elle-même produite ;
+- la fonction de réponse et la corrélation des signes sont en **temps de
+  transaction** ; le déséquilibre est observé **à chaque mise à jour de
+  cotation**. Les observations successives ne sont pas indépendantes : les
+  comptages ne se lisent pas comme des tirages ;
+- les variances réalisées sont dans le carré de l'unité des prix fournis, sur
+  tout l'échantillon, pas par unité de temps.
+
+**Pourquoi.** Toutes les mesures du §4.5 et du §7 du compagnon se calculent
+au meilleur prix : la bande est la plus petite donnée qui les porte toutes,
+et elle se construit de la même façon à partir d'un flux L3, L2 ou de
+transactions seules.
+
+**Ce qui n'est pas fait dans le lot M3.**
+- Le lambda de Kyle par régression : au lot M6, avec l'impact.
+- La mesure d'Amihud (données quotidiennes), le VPIN (§7.4 : à ne pas
+  afficher sans son débat), l'effet Epps (il faut deux actifs), le
+  déséquilibre du flux d'ordres de Cont, Kukanov & Stoikov, le micro-prix de
+  Stoikov, les noyaux réalisés : cités par le compagnon, pas codés.
+- **Aucune mesure n'a encore tourné sur des données réelles** (lot M1).
+
+**Formules.** Relues dans l'article : fonction de réponse et corrélation des
+signes (Bouchaud et al. 2004, éq. 3 et 6) ; biais de la variance réalisée et
+estimateur à deux échelles (Zhang, Mykland & Aït-Sahalia 2005, éq. 5, 34, 55,
+64). **Non relue** : la règle de Lee & Ready (1991), codée telle que la
+décrit le §7.2 du compagnon (règle de cotation puis *tick test*), sans le
+décalage des cotations de l'article d'origine.
+
+**Écarté.**
+- *Calculer les mesures directement sur le flux d'événements* : chaque mesure
+  devrait rejouer le carnet.
+- *Une transaction par événement `Trade`* : un ordre qui traverse trois
+  ordres en attente compterait pour trois, ce qui gonflerait artificiellement
+  l'autocorrélation des signes.
+

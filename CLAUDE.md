@@ -16,16 +16,17 @@ ajouter.
 
 ## État du dépôt
 
-**Carnet, moteur d'appariement et simulateurs de flux livrés ; aucune mesure,
-aucune donnée réelle.** Le dépôt a été créé le 11 octobre 2026. Mettre cette
+**Carnet, moteur d'appariement, simulateurs de flux et mesures livrés, et
+exposés à Python ; aucune donnée réelle.** Le dépôt a été créé le 11 octobre 2026. Mettre cette
 section à jour à chaque lot livré.
 
 | Lot | État |
 |---|---|
 | M0 — Socle | livré : chaîne de build, tests, benchmark, wheel, CI |
-| M2 — Carnet et moteur | livré : `core/` (types entiers, format d'événement), `feed/` (fichier d'événements, détection de trous), `book/` (carnet L3, carnet L2, agrégation L3 vers L2), `matching/` (moteur prix-temps). Rien n'est encore exposé à Python |
+| M2 — Carnet et moteur | livré : `core/` (types entiers, format d'événement), `feed/` (fichier d'événements, détection de trous), `book/` (carnet L3, carnet L2, agrégation L3 vers L2), `matching/` (moteur prix-temps) |
 | M4 — Simulateurs | livré : `sim/` (générateur aléatoire, intelligence zéro, Hawkes univarié avec maximum de vraisemblance et changement de temps, queue-reactive, Roll, Kyle, Glosten-Milgrom). Écarts aux articles et formules non relues : ADR-009 |
-| M1, M3, M5 à M8 | à faire ; le suivant est **M3** (mesures), puis M5 (backtest carnet). M1 (capture, dans `data-ingest`) est à lancer tôt |
+| M3 — Mesures | livré : `measures/` (bande des cotations et transactions, fourchettes cotée, effective, réalisée, Roll, déséquilibre, profondeur, variance réalisée, graphique de signature, deux échelles, corrélation des signes, fonction de réponse, signe des transactions) et **liaisons Python** de tout ce qui précède. Ce qui n'est pas fait : ADR-010 |
+| M1, M5 à M8 | à faire ; le suivant est **M5** (backtest carnet). M1 (capture, dans `data-ingest`) est à lancer tôt |
 
 Où lire le code, dans l'ordre : `core/event.hpp` (le format, ADR-007),
 `book/order_book.hpp` (la structure, ADR-008), `matching/matching_engine.hpp`,
@@ -34,7 +35,11 @@ simulateurs : `sim/toy_models.hpp` (les trois modèles du §4, avec leur
 dérivation), `sim/zero_intelligence.hpp`, `sim/hawkes.hpp`,
 `sim/queue_reactive.hpp`.
 
-`sim/` utilise des `double` (taux, temps en secondes, valeurs de Kyle) :
+Pour les mesures : `measures/tape.hpp` d'abord (ADR-010), puis un fichier par
+famille. Côté Python, tout est dans `bindings/python/module.cpp` ; les tests
+de `tests/python/` montrent comment enchaîner simulateur, bande et mesure.
+
+`sim/` et `measures/` utilisent des `double` (taux, temps en secondes, valeurs de Kyle) :
 l'interdiction ne vaut que pour `core/`, `book/` et `matching/`. Tout
 simulateur prend une graine et passe par `sim/rng.hpp`, jamais par les lois de
 `<random>`.
@@ -103,7 +108,7 @@ installées par le manifeste [`vcpkg.json`](vcpkg.json) à la configuration.
 | `ctest --test-dir build -R BuildInfo` | Les tests dont le nom contient un motif |
 | `scripts/bench.sh` | Construit (preset `bench`, dans `build-bench/`) et lance le benchmark ; les arguments vont à google-benchmark, par exemple `--benchmark_filter=...` |
 | `scripts/build_wheel.sh` | Wheel `quantmicrostructure` dans `dist/` (sans vcpkg : la lib n'a aucune dépendance tierce) |
-| `pytest` | Tests Python, sur le wheel installé dans l'environnement courant |
+| `pytest` | Tests Python, sur le wheel installé dans l'environnement courant (le reconstruire et le réinstaller après un changement de C++ : `uv pip install --force-reinstall dist/*.whl`) |
 | `pre-commit run --all-files` | `clang-format` 18 et `black` |
 
 Les scripts bornent le build et les tests à `NPROC` processus (16 par défaut,
