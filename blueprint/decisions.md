@@ -376,3 +376,120 @@ voit que le meilleur prix, pas la profondeur ; le backtest n'est pas exposé à
 Python (une stratégie est une classe C++), ce qui viendra avec les stratégies
 des lots M7 et M8.
 
+---
+
+## ADR-012 — L'impact : ce qui est mesuré, et un résultat négatif
+
+**Décision.** Le lot M6 livre dans `impact/` : le modèle de propagateur de
+Bouchaud, Gefen, Potters & Wyart (2004) sans le facteur de volume
+(simulation, diffusion $D(\ell)$, ajustement de $G$ par résolution du
+système linéaire qui relie la réponse aux corrélations de signes) ; le lambda
+de Kyle par régression ; la mesure de l'impact d'un métaordre injecté dans le
+simulateur d'intelligence zéro ; le coût d'un aller-retour dans un modèle
+d'impact transitoire. Et dans `sim/` un flux de signes à mémoire longue (le
+modèle de découpage d'ordres de Lillo, Mike & Farmer 2005, forme « N fixé »).
+
+**Ce que les tests retrouvent.**
+- Kyle simulé : la régression donne $\sigma_v / (2\sigma_u)$.
+- Sur un flux de mémoire $\gamma = 1/2$, l'exposant de croissance de
+  $D(\ell)$ vaut $2 - 2\beta - \gamma$ sous l'exposant critique, et passe par
+  1 (prix diffusif) à $\beta = (1-\gamma)/2$.
+- Le propagateur est relu à quelques pour cent près sur la première moitié
+  des retards ajustés, malgré des signes très corrélés et du bruit.
+- Avec un impact linéaire et un noyau décroissant, aucun aller-retour ne
+  gagne d'argent ; avec un impact concave et une décroissance exponentielle,
+  on en exhibe un qui gagne.
+
+**Résultat négatif : la loi en racine carrée n'est pas reproduite.** Dans le
+simulateur d'intelligence zéro, l'impact d'un métaordre exécuté lentement est
+**proportionnel** à sa taille (exposant mesuré proche de 1, pas de 1/2). Seul
+l'impact instantané d'un ordre qui traverse le carnet est concave (exposant
+mesuré autour de 0,9). Ce flux n'a pas de mémoire et n'anticipe rien : le
+carnet se reconstitue au même rythme quoi qu'on exécute. Le critère du §5.4
+(« vérifier la loi en racine carrée dans un simulateur ») **n'est donc pas
+rempli**, et un test garde ce constat. La retrouver demande un modèle à
+liquidité latente (Tóth et al. 2011), qui n'est pas écrit : c'est une issue à
+ouvrir, pas un détail.
+
+**Limites de mesure.** L'exposant de mémoire d'un flux se mesure mal : les
+tailles d'ordres ont une variance infinie, et sur un million de signes
+l'exposant ajusté varie de 0,4 à 0,6 selon la graine pour une valeur
+théorique de 0,5. Les tests moyennent plusieurs tirages et comparent d'abord
+la corrélation à sa valeur exacte aux petits retards. La même prudence vaudra
+sur données réelles.
+
+**Formules.** Relues dans l'article : modèle de propagateur, réponse,
+forme en loi de puissance et exposant critique (Bouchaud et al. 2004, éq. 1,
+12, 17, 22, 23) ; modèle de découpage et exposant de la corrélation (Lillo,
+Mike & Farmer 2005, §II, éq. 16 et 17). **Non relu** : Gatheral (2010), dont
+seul le résumé a pu être lu ; il confirme l'énoncé du §5.5 (décroissance
+exponentielle compatible seulement avec un impact linéaire).
+
+**À corriger dans le compagnon.** Le §5.5 illustre l'arbitrage par « acheter
+vite, revendre lentement ». Avec un impact concave, c'est l'inverse qui
+gagne dans notre modèle : acheter lentement (chaque lot pousse davantage le
+prix) et revendre vite. Le sens dépend de la forme de l'impact ; la phrase
+est à nuancer.
+
+**Écarté.**
+- *Ajuster le propagateur avec le facteur $\ln V$ de l'article* : les
+  simulateurs du dépôt traitent des ordres de taille unique.
+- *Présenter l'exposant mesuré dans l'intelligence zéro comme une
+  vérification de la loi en racine carrée* : ce n'en est pas une.
+
+---
+
+## ADR-013 — L'exécution : le modèle, les échéanciers, l'analyse des coûts
+
+**Décision.** Le lot M7 livre dans `execution/` :
+
+- **Almgren & Chriss (2000) dans sa forme discrète**, avec la notation de
+  l'article : un programme de **vente** de $X$ titres en $N$ intervalles de
+  longueur $\tau$. Trajectoire optimale, coût attendu, variance, frontière
+  efficiente, et simulation du modèle de prix de l'article ;
+- les échéanciers usuels : TWAP, VWAP (un profil de volume attendu), POV (une
+  fraction du volume observé, qui peut ne pas finir) ;
+- un exécuteur (`ScheduleExecutor`) qui déroule un échéancier dans le backtest
+  du lot M5, par un ordre au marché au début de chaque tranche ;
+- le déficit d'exécution et sa décomposition (retard, exécution, opportunité,
+  frais), et le VWAP du marché comme référence.
+
+**Pourquoi la forme discrète.** C'est celle de l'article, et celle qu'on
+exécute : $\kappa$ y est la solution de
+$\frac{2}{\tau^2}(\cosh(\kappa\tau) - 1) = \lambda\sigma^2/\tilde\eta$ avec
+$\tilde\eta = \eta - \gamma\tau/2$, et ne vaut $\sqrt{\lambda\sigma^2/\eta}$
+(la formule du §8.2 du compagnon) qu'à la limite $\tau \to 0$. Coder la
+formule continue sur une grille grossière donnerait une trajectoire qui
+n'est pas optimale, ce qu'un test vérifie.
+
+**Ce que les tests retrouvent.** Aversion nulle : la droite, qui est le TWAP.
+Le coût simulé a la moyenne et la variance des formules fermées (éq. 20).
+Aucune autre trajectoire ne fait mieux. La frontière est décroissante et
+convexe, de pente $-\lambda$. Plus d'aversion vend plus vite à chaque date.
+Dans le simulateur, un ordre découpé coûte moins par lot qu'un bloc.
+
+**Limites.**
+- Le modèle suppose un impact **linéaire** dans la vitesse d'exécution, ce
+  que la loi en racine carrée contredit, et une marche aléatoire arithmétique
+  sans dérive. La trajectoire ne réagit pas au prix.
+- Ses paramètres ($\sigma$, $\gamma$, $\eta$) ne sont calibrés sur rien : il
+  n'y a pas encore de données.
+- **Une seule tactique** : un ordre au marché par tranche. Le second étage du
+  §8.3 (ordre limité ou au marché, à quel prix, quand annuler) n'est pas
+  écrit ; il relève du queue-reactive, qui n'est pas un lieu d'exécution.
+- L'impact transitoire d'Obizhaeva & Wang et l'impact non linéaire d'Almgren
+  (2003) ne sont pas codés.
+- L'exécution dans le simulateur se lit **en moyenne sur des graines** : une
+  seule trajectoire est dominée par le hasard du prix.
+
+**Formules.** Relues dans l'article : Almgren & Chriss (2000), éq. 1 à 13 et
+16 à 20, dans une copie de l'article hébergée par un tiers. **Non relu** :
+Perold (1988) ; la décomposition du déficit est celle du §8.4 du compagnon,
+dérivée dans le commentaire de `execution/tca.hpp` et vérifiée contre sa
+définition (portefeuille papier moins portefeuille réel).
+
+**Écarté.**
+- *Séparer « fourchette » et « impact » dans le coût d'exécution* : il faut
+  le prix milieu juste avant chaque exécution, que `Fill` ne porte pas. À
+  ajouter si une stratégie le demande.
+

@@ -15,6 +15,8 @@ add_executable(quantMicrostructure_tests
   testTape.cpp
   testMeasures.cpp
   testBacktest.cpp
+  testImpact.cpp
+  testExecution.cpp
 )
 target_link_libraries(quantMicrostructure_tests
   PRIVATE
