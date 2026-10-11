@@ -24,7 +24,9 @@ def test_risk_aversion_front_loads_the_trades():
 
 def test_frontier_is_decreasing_and_convex():
     aversions = np.geomspace(1e-8, 1e-4, 20)
-    frontier = qm.efficient_frontier(1e6, 5.0, 20, epsilon=0.0625, risk_aversions=aversions, **MODEL)
+    frontier = qm.efficient_frontier(
+        1e6, 5.0, 20, epsilon=0.0625, risk_aversions=aversions, **MODEL
+    )
     assert np.all(np.diff(frontier["variance"]) < 0)
     assert np.all(np.diff(frontier["expected"]) > 0)
     slopes = np.diff(frontier["expected"]) / np.diff(frontier["variance"])
@@ -35,7 +37,12 @@ def test_simulated_shortfall_matches_the_formula():
     schedule = qm.almgren_chriss_schedule(1e6, 5.0, 5, risk_aversion=2e-6, **MODEL)
     cost = qm.schedule_cost(schedule["trades"], schedule["tau"], **MODEL)
     sample = qm.simulate_shortfall(
-        schedule["trades"], schedule["tau"], epsilon=0.0, paths=100_000, seed=2026, **MODEL
+        schedule["trades"],
+        schedule["tau"],
+        epsilon=0.0,
+        paths=100_000,
+        seed=2026,
+        **MODEL,
     )
     standard_error = np.sqrt(cost["variance"] / len(sample))
     assert sample.mean() == pytest.approx(cost["expected"], abs=4 * standard_error)
@@ -65,7 +72,9 @@ def test_implementation_shortfall_adds_up():
     assert (b["delay"], b["trading"], b["opportunity"]) == (3.0, 5.0, 12.0)
     assert b["total"] == pytest.approx(20.7)
     with pytest.raises(ValueError):
-        qm.implementation_shortfall("hold", 1, 1.0, 1.0, 1.0, np.array([]), np.array([]))
+        qm.implementation_shortfall(
+            "hold", 1, 1.0, 1.0, 1.0, np.array([]), np.array([])
+        )
 
 
 def test_execute_schedule_in_the_simulator():
@@ -75,7 +84,9 @@ def test_execute_schedule_in_the_simulator():
         trades = qm.twap_schedule(60.0, 300.0, slices)["trades"]
         costs = []
         for seed in range(40):
-            run = qm.execute_schedule("buy", trades, 300.0 / slices, seed=seed, **market)
+            run = qm.execute_schedule(
+                "buy", trades, 300.0 / slices, seed=seed, **market
+            )
             assert run["target"] == 60 and run["shortfall"]["filled"] == 60
             assert np.all(run["fills"]["sign"] == 1.0)
             assert not run["fills"]["maker"].any()
