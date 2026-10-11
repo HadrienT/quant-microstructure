@@ -193,11 +193,11 @@ namespace quantMicrostructure
                                                      {
                                                          engine.submitLimit(1, Side::Buy, 100, 10, 10, out);
                                                          engine.submitLimit(2, Side::Sell, 102, 50, 20, out);
-                                                         engine.submitMarket(Side::Sell, 6, 30, out);  // 4 left ahead
-                                                         engine.submitMarket(Side::Sell, 4, 40, out);  // none left ahead
+                                                         engine.submitMarket(Side::Sell, 6, 30, out); // 4 left ahead
+                                                         engine.submitMarket(Side::Sell, 4, 40, out); // none left ahead
                                                          engine.submitLimit(3, Side::Buy, 100, 20, 50, out);
-                                                         engine.submitMarket(Side::Sell, 3, 60, out);  // 3 for us
-                                                         engine.submitMarket(Side::Sell, 7, 70, out);  // our last 2
+                                                         engine.submitMarket(Side::Sell, 3, 60, out); // 3 for us
+                                                         engine.submitMarket(Side::Sell, 7, 70, out); // our last 2
                                                      });
         for (const StreamKind kind : {StreamKind::OrderByOrder, StreamKind::Aggregated})
         {
@@ -231,8 +231,7 @@ namespace quantMicrostructure
                                   engine.submitLimit(2, Side::Sell, 102, 50, 20, out); // we join now
                                   engine.submitLimit(3, Side::Buy, 100, 5, 30, out);   // behind us
                                   engine.cancel(cancelled, 40, out);
-                                  engine.submitMarket(Side::Sell, 3, 50, out);
-                              });
+                                  engine.submitMarket(Side::Sell, 3, 50, out); });
         };
         const auto run = [&](OrderId cancelled)
         {
@@ -259,8 +258,7 @@ namespace quantMicrostructure
                                                                    engine.submitLimit(3, Side::Buy, 100, 4, 30, out);
                                                                    engine.submitLimit(4, Side::Buy, 100, 1, 31, out);
                                                                    engine.cancel(3, 40, out);
-                                                                   engine.submitMarket(Side::Sell, 9, 50, out);
-                                                               }));
+                                                                   engine.submitMarket(Side::Sell, 9, 50, out); }));
         const auto run = [&](QueueModel model)
         {
             Scripted strategy;
@@ -284,8 +282,7 @@ namespace quantMicrostructure
                                                      {
                                                          engine.submitLimit(1, Side::Buy, 100, 10, 10, out);
                                                          engine.submitLimit(2, Side::Sell, 104, 50, 20, out);
-                                                         engine.submitMarket(Side::Sell, 3, 30, out);
-                                                     });
+                                                         engine.submitMarket(Side::Sell, 3, 30, out); });
         for (const StreamKind kind : {StreamKind::OrderByOrder, StreamKind::Aggregated})
         {
             const std::vector<Event> events = kind == StreamKind::OrderByOrder ? orders : aggregate(orders);
@@ -309,8 +306,7 @@ namespace quantMicrostructure
                                                          engine.submitLimit(2, Side::Sell, 102, 4, 20, out);
                                                          engine.submitLimit(3, Side::Buy, 99, 5, 30, out);
                                                          engine.submitMarket(Side::Sell, 1, 40, out);
-                                                         engine.submitMarket(Side::Sell, 1, 50, out);
-                                                     });
+                                                         engine.submitMarket(Side::Sell, 1, 50, out); });
         BacktestConfig config;
         config.fees.taker = 0.001;
         config.fees.maker = -0.0005;
@@ -351,8 +347,7 @@ namespace quantMicrostructure
                                                          engine.submitLimit(1, Side::Sell, 101, 5, 10, out);
                                                          engine.submitLimit(2, Side::Sell, 103, 5, 20, out);
                                                          engine.cancel(1, 100, out);
-                                                         engine.submitLimit(3, Side::Sell, 110, 1, 500, out);
-                                                     });
+                                                         engine.submitLimit(3, Side::Sell, 110, 1, 500, out); });
         const auto priceWithLatency = [&](Timestamp latency) -> Price
         {
             Scripted strategy;
@@ -387,8 +382,7 @@ namespace quantMicrostructure
                                                          engine.submitLimit(1, Side::Sell, 104, 50, 10, out);
                                                          engine.submitLimit(2, Side::Buy, 90, 1, 20, out);
                                                          engine.submitLimit(3, Side::Buy, 91, 1, 60, out);
-                                                         engine.submitMarket(Side::Sell, 1, 100, out);
-                                                     });
+                                                         engine.submitMarket(Side::Sell, 1, 100, out); });
         const auto run = [&](Timestamp latency)
         {
             // Joins at 100 on the first event, decides to cancel at time 60.
