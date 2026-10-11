@@ -321,3 +321,58 @@ décalage des cotations de l'article d'origine.
   ordres en attente compterait pour trois, ce qui gonflerait artificiellement
   l'autocorrélation des signes.
 
+---
+
+## ADR-011 — Le backtest au niveau du carnet : ce qu'il suppose
+
+**Décision.** Une stratégie (`replay/backtest.hpp`) ne voit que deux choses :
+le marché (meilleurs prix et sa propre position) et une passerelle pour
+envoyer des ordres. Elle tourne sans changement en deux lieux :
+
+| Lieu | Les données | La réaction du marché | La file d'attente |
+|---|---|---|---|
+| `runReplay` : rejeu d'un flux enregistré | réelles | **aucune** | exacte en L3, supposée en L2 |
+| `runSimulation` : dans le simulateur d'intelligence zéro | un modèle | mécanique, par le carnet | exacte (c'est le moteur qui la tient) |
+
+Les hypothèses du rejeu, toutes déclarées dans `BacktestConfig` ou dans le
+commentaire de `runReplay`, et reprises dans `BacktestResult` :
+
+- **Latence** : un délai constant entre la décision et l'arrivée de l'ordre.
+  La stratégie voit le marché sans délai ; tout l'aller-retour est imputé à
+  l'envoi.
+- **File** : un ordre limité arrive en queue, derrière tout ce qui est
+  affiché à son prix. En L3 on sait quels ordres étaient devant. En L2 une
+  annulation est anonyme : `Pessimistic` (elle vient de derrière nous tant
+  qu'il y a quelqu'un) ou `ProRata` (répartie sur toute la file).
+- **Exécution passive** : quand le volume agressif enregistré dépasse la file
+  devant nous, ou tout de suite si la transaction enregistrée s'est faite à
+  un prix moins bon que le nôtre.
+- **Impact de nos ordres** : un ordre agressif prend les quantités affichées,
+  du meilleur prix vers le moins bon, et **laisse le carnet enregistré
+  intact** : la liquidité prise est de nouveau là pour l'ordre suivant.
+  C'est la limite la plus forte du rejeu, et la raison d'être du simulateur.
+- **Frais** : une fraction du notionnel, par côté (fournisseur ou preneur),
+  négative pour une remise.
+- **Après un trou** (événement `Clear`) nos ordres perdent leur place et
+  passent derrière ce que montre l'instantané.
+
+**Pas de futur.** Un ordre qui arrive à l'instant d'un événement est appliqué
+avant lui : il voyageait déjà. Le test coupe le flux à un instant $t$, le
+remplace par deux autres futurs, et vérifie que décisions et exécutions
+jusqu'à $t$ sont identiques.
+
+**Écarté.**
+- *Exécuter un ordre limité dès que le prix touche son niveau* : la version
+  naïve du §10 ; un test vérifie qu'on ne la fait pas.
+- *Retirer du carnet rejoué la liquidité que nous prenons* : il faudrait
+  décider comment elle revient, c'est-à-dire un modèle de réaction posé sur
+  des données réelles. Le simulateur le fait proprement.
+- *Deux latences* (données et ordres) : une seule suffit tant qu'aucune
+  stratégie ne dépend de la différence.
+
+**Ce qui n'est pas fait.** Le queue-reactive n'est pas un lieu d'exécution
+(il ne connaît que des quantités par prix, pas d'ordres) ; la stratégie ne
+voit que le meilleur prix, pas la profondeur ; le backtest n'est pas exposé à
+Python (une stratégie est une classe C++), ce qui viendra avec les stratégies
+des lots M7 et M8.
+

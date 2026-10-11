@@ -16,8 +16,8 @@ ajouter.
 
 ## État du dépôt
 
-**Carnet, moteur d'appariement, simulateurs de flux et mesures livrés, et
-exposés à Python ; aucune donnée réelle.** Le dépôt a été créé le 11 octobre 2026. Mettre cette
+**Carnet, moteur d'appariement, simulateurs, mesures et backtest au niveau du
+carnet livrés ; aucune donnée réelle.** Le dépôt a été créé le 11 octobre 2026. Mettre cette
 section à jour à chaque lot livré.
 
 | Lot | État |
@@ -26,7 +26,8 @@ section à jour à chaque lot livré.
 | M2 — Carnet et moteur | livré : `core/` (types entiers, format d'événement), `feed/` (fichier d'événements, détection de trous), `book/` (carnet L3, carnet L2, agrégation L3 vers L2), `matching/` (moteur prix-temps) |
 | M4 — Simulateurs | livré : `sim/` (générateur aléatoire, intelligence zéro, Hawkes univarié avec maximum de vraisemblance et changement de temps, queue-reactive, Roll, Kyle, Glosten-Milgrom). Écarts aux articles et formules non relues : ADR-009 |
 | M3 — Mesures | livré : `measures/` (bande des cotations et transactions, fourchettes cotée, effective, réalisée, Roll, déséquilibre, profondeur, variance réalisée, graphique de signature, deux échelles, corrélation des signes, fonction de réponse, signe des transactions) et **liaisons Python** de tout ce qui précède. Ce qui n'est pas fait : ADR-010 |
-| M1, M5 à M8 | à faire ; le suivant est **M5** (backtest carnet). M1 (capture, dans `data-ingest`) est à lancer tôt |
+| M5 — Backtest carnet | livré : `replay/` (stratégie, passerelle, latence, file, frais ; `runReplay` sur un flux L2 ou L3, `runSimulation` dans l'intelligence zéro). Hypothèses : ADR-011. Pas encore exposé à Python |
+| M1, M6 à M8 | à faire ; les suivants sont **M6** (impact), puis M7 et M8. M1 (capture, dans `data-ingest`) est à lancer tôt |
 
 Où lire le code, dans l'ordre : `core/event.hpp` (le format, ADR-007),
 `book/order_book.hpp` (la structure, ADR-008), `matching/matching_engine.hpp`,
@@ -39,7 +40,11 @@ Pour les mesures : `measures/tape.hpp` d'abord (ADR-010), puis un fichier par
 famille. Côté Python, tout est dans `bindings/python/module.cpp` ; les tests
 de `tests/python/` montrent comment enchaîner simulateur, bande et mesure.
 
-`sim/` et `measures/` utilisent des `double` (taux, temps en secondes, valeurs de Kyle) :
+Pour le backtest : `replay/backtest.hpp`, dont les commentaires portent les
+hypothèses (ADR-011), puis `tests/testBacktest.cpp`, qui les déroule une par
+une sur des marchés écrits à la main.
+
+`sim/`, `measures/` et `replay/` utilisent des `double` (taux, temps en secondes, valeurs de Kyle) :
 l'interdiction ne vaut que pour `core/`, `book/` et `matching/`. Tout
 simulateur prend une graine et passe par `sim/rng.hpp`, jamais par les lois de
 `<random>`.

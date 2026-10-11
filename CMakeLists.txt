@@ -48,6 +48,7 @@ add_library(quantMicrostructure
   src/measures/liquidity.cpp
   src/measures/volatility.cpp
   src/measures/flow.cpp
+  src/replay/backtest.cpp
 )
 
 set_target_properties(quantMicrostructure PROPERTIES

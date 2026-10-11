@@ -11,8 +11,8 @@ It is built around the three questions of the field:
 | What does a trade cost? | Market impact (response function, propagator, square-root law), optimal execution (Almgren-Chriss, TWAP, VWAP, POV), transaction cost analysis |
 | What does quoting earn? | Market making (Avellaneda-Stoikov, Guéant-Lehalle-Fernandez-Tapia), markouts, a book-level backtest with latency and queue position |
 
-**Status: order book, matching engine, simulators and measures.** Work
-packages M0 (build chain), M2, M4 and M3 are done:
+**Status: order book, matching engine, simulators, measures and backtest.**
+Work packages M0 (build chain), M2, M4, M3 and M5 are done:
 
 - integer types and the single event format, an event file reader and writer
   with gap detection;
@@ -25,9 +25,12 @@ packages M0 (build chain), M2, M4 and M3 are done:
 - measures: quoted, effective and realised spreads, Roll's estimator,
   imbalance, realised variance, signature plot, two-scale estimator, sign
   correlation, response function, trade signing;
-- all of it available from Python.
+- a book-level backtest: one strategy interface, run against a recorded
+  stream (latency, queue position, fees) or inside the simulator, where the
+  market reacts;
+- simulators and measures available from Python.
 
-Nothing has been measured on real data yet, and there is no backtest,
+Nothing has been measured on real data yet, and there is no impact,
 execution or market-making model.
 
 **This is a study repository, not a trading system.** It never connects to an
