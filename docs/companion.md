@@ -324,13 +324,29 @@ $Q^{3/2}$, ce qui borne la capacité d'une stratégie.
 
 Elle ne se mesure que si l'on connaît le début et la fin de métaordres, donc
 sur ses propres ordres ou sur des données propriétaires. Sur données
-publiques on ne peut que la **vérifier dans un simulateur** (§13, lot M6).
+publiques il ne reste qu'à la chercher dans un simulateur.
+
+**Ce dépôt ne la vérifie pas.** Dans le simulateur d'intelligence zéro
+(§6.1), l'impact d'un métaordre exécuté lentement est proportionnel à sa
+taille : l'exposant ajusté est proche de 1, pas de 1/2. Seul l'impact
+instantané d'un ordre qui traverse le carnet y est concave, avec un exposant
+autour de 0,9. La raison est dans le modèle : son flux n'a pas de mémoire et
+n'anticipe rien, donc le carnet se reconstitue au même rythme quoi qu'on
+exécute. Un test garde ce constat
+(`MetaorderImpact.ZeroIntelligenceDoesNotGiveTheSquareRootLaw`) et l'ADR-012
+le détaille. La retrouver demanderait un simulateur à liquidité latente,
+alimenté par un flux à mémoire longue, dans l'esprit de Tóth et al. (2011) :
+il n'est pas écrit, et figure parmi les suites possibles du §13.
 
 ### 5.5 Contraintes de cohérence
 
 Un modèle d'impact ne doit pas permettre de gagner de l'argent en faisant un
-aller-retour (acheter vite, revendre lentement). Gatheral (2010) en tire des
-conditions qui lient la forme de l'impact instantané à la décroissance du
+aller-retour dont l'achat et la revente n'ont pas le même rythme. Le sens qui
+gagne dépend de la forme de l'impact. Dans le modèle du dépôt, avec un impact
+concave et une décroissance exponentielle, c'est acheter lentement et
+revendre vite : découpé en petits lots, l'achat pousse davantage le prix par
+titre que la revente en bloc ne le fait redescendre. Gatheral (2010) en tire
+des conditions qui lient la forme de l'impact instantané à la décroissance du
 noyau : par exemple, une décroissance exponentielle n'est compatible qu'avec
 un impact instantané linéaire. C'est un test à faire passer à tout modèle
 d'impact du dépôt.
@@ -665,12 +681,14 @@ monde simulé.
 | **M3 — Mesures et faits stylisés** | ici | `measures/` : les mesures du §4.5 et du §7, autocorrélation des signes, fonction de réponse, graphique de signature, déséquilibre et prochain mouvement | Sur un modèle de Roll simulé, l'estimateur retrouve la fourchette. Sur un brownien sans bruit le graphique de signature est plat ; avec bruit, le biais mesuré vaut $2n\omega^2$ |
 | **M4 — Simulateurs de flux** | ici | `sim/` : intelligence zéro, Hawkes (amincissement d'Ogata, maximum de vraisemblance), queue-reactive, modèles jouets | Hawkes : intensité moyenne simulée égale à $\mu/(1-n)$ ; le maximum de vraisemblance retrouve les paramètres ; les durées changées de temps passent un test d'exponentialité |
 | **M5 — Backtest au niveau du carnet** | ici | `replay/` : stratégie, latence, position dans la file, exécutions, frais ; même interface sur rejeu et sur simulateur | Latence nulle et stratégie passive qui ne cote jamais : aucune exécution, P&L nul. Un ordre en queue de file n'est exécuté qu'après le volume qui le précède |
-| **M6 — Impact** | ici | `impact/` : fonction de réponse, ajustement du propagateur, lambda de Kyle ; loi en racine carrée vérifiée sur des métaordres injectés dans un simulateur | Kyle simulé : la régression retrouve $\sigma_v / (2\sigma_u)$. Propagateur : la relation $\beta = (1-\gamma)/2$ est retrouvée sur un flux simulé de mémoire connue |
+| **M6 — Impact** | ici | `impact/` : fonction de réponse, ajustement du propagateur, lambda de Kyle ; impact de métaordres injectés dans un simulateur, où la loi en racine carrée n'est pas retrouvée (§5.4) | Kyle simulé : la régression retrouve $\sigma_v / (2\sigma_u)$. Propagateur : la relation $\beta = (1-\gamma)/2$ est retrouvée sur un flux simulé de mémoire connue |
 | **M7 — Exécution** | ici | `execution/` : Almgren-Chriss, TWAP, VWAP, POV, déficit d'exécution et sa décomposition ; frontière efficiente | Aversion nulle : la trajectoire est linéaire. Le coût simulé retrouve la formule fermée. La frontière est convexe et décroissante |
 | **M8 — Tenue de marché** | ici | `mm/` : Avellaneda-Stoikov puis Guéant-Lehalle-Fernandez-Tapia ; décomposition du P&L ; markouts ; dans un simulateur puis sur rejeu | Inventaire nul : cotations symétriques. Le décalage a le signe opposé à l'inventaire. Contre une stratégie symétrique autour du prix milieu, l'écart-type du P&L et celui de l'inventaire final sont plus faibles (le résultat de l'article) |
 
-Suite possible, non spécifiée : calibrer sur ces mesures les modèles de coût
-de `quant-backtest` ; une page sur le site de `quant-modeling`.
+Suite possible, non spécifiée : un simulateur à liquidité latente, pour
+retrouver la loi en racine carrée que l'intelligence zéro ne donne pas
+(§5.4) ; calibrer sur ces mesures les modèles de coût de `quant-backtest` ;
+une page sur le site de `quant-modeling`.
 
 ---
 
@@ -714,7 +732,7 @@ Rien de ce qui suit n'a été mesuré : c'est l'état des connaissances au
 | Carnet sur actions | rien | les flux des places actions sont payants (LOBSTER pour la recherche, Databento à l'usage) | Pas d'achat tant que les lots M2 à M5 ne tournent pas sur données capturées. Les prix sont à relever au moment de décider |
 | Historique | rien | un flux capturé ne remonte pas dans le passé : l'historique s'accumule à partir du jour où la capture démarre | Démarrer M1 tôt, même avant d'en avoir besoin, et ne pas l'interrompre |
 | Volume de stockage | inconnu | une mesure sur une journée | Le format est choisi sans attendre la mesure (ADR-015 : fichiers binaires de taille fixe, séries temporelles en appui). La mesure reste à faire : elle fixe la rétention et la compression |
-| Métaordres | rien, et il n'en existe pas de publics | début et fin de gros ordres | La loi en racine carrée ne se vérifie qu'en simulateur (§5.4) |
+| Métaordres | rien, et il n'en existe pas de publics | début et fin de gros ordres | La loi en racine carrée ne pourrait se vérifier qu'en simulateur, et celui du dépôt ne la reproduit pas (§5.4) |
 | Horloge | celle du serveur | une synchronisation meilleure que NTP | Garder l'horodatage de la bourse **et** celui de réception ; ne rien conclure sous la milliseconde |
 
 Limites à écrire partout où un résultat est montré : un marché de

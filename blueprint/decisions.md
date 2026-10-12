@@ -411,8 +411,12 @@ mesuré autour de 0,9). Ce flux n'a pas de mémoire et n'anticipe rien : le
 carnet se reconstitue au même rythme quoi qu'on exécute. Le critère du §5.4
 (« vérifier la loi en racine carrée dans un simulateur ») **n'est donc pas
 rempli**, et un test garde ce constat. La retrouver demande un modèle à
-liquidité latente (Tóth et al. 2011), qui n'est pas écrit : c'est une issue à
-ouvrir, pas un détail.
+liquidité latente (Tóth et al. 2011), qui n'est pas écrit.
+
+**Tranché le 12 octobre 2026** (issue #15) : ce modèle n'est pas construit
+dans les lots du blueprint. Le compagnon dit au §5.4 que la loi n'est pas
+vérifiée ici, le critère est retiré du lot M6 au §13, et le simulateur à
+liquidité latente y figure comme suite possible.
 
 **Limites de mesure.** L'exposant de mémoire d'un flux se mesure mal : les
 tailles d'ordres ont une variance infinie, et sur un million de signes
@@ -428,11 +432,11 @@ Mike & Farmer 2005, §II, éq. 16 et 17). **Non relu** : Gatheral (2010), dont
 seul le résumé a pu être lu ; il confirme l'énoncé du §5.5 (décroissance
 exponentielle compatible seulement avec un impact linéaire).
 
-**À corriger dans le compagnon.** Le §5.5 illustre l'arbitrage par « acheter
+**Corrigé dans le compagnon.** Le §5.5 illustrait l'arbitrage par « acheter
 vite, revendre lentement ». Avec un impact concave, c'est l'inverse qui
 gagne dans notre modèle : acheter lentement (chaque lot pousse davantage le
-prix) et revendre vite. Le sens dépend de la forme de l'impact ; la phrase
-est à nuancer.
+prix) et revendre vite. Le sens dépend de la forme de l'impact ; le §5.5 le
+dit depuis le 12 octobre 2026.
 
 **Écarté.**
 - *Ajuster le propagateur avec le facteur $\ln V$ de l'article* : les
