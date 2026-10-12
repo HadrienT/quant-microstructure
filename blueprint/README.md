@@ -37,7 +37,7 @@ base de tout le reste.
 | M3 | Mesures et faits stylisés | ici | Fourchettes, déséquilibre, variance réalisée, graphique de signature, signe des transactions, fonction de réponse |
 | M4 | Simulateurs de flux | ici | Intelligence zéro, Hawkes, queue-reactive, modèles jouets |
 | M5 | Backtest au niveau du carnet | ici | Latence, position dans la file, exécutions, frais ; sur rejeu et sur simulateur |
-| M6 | Impact | ici | Fonction de réponse, propagateur, lambda de Kyle, loi en racine carrée en simulateur |
+| M6 | Impact | ici | Fonction de réponse, propagateur, lambda de Kyle, impact d'un métaordre en simulateur |
 | M7 | Exécution | ici | Almgren-Chriss, TWAP, VWAP, POV, analyse des coûts |
 | M8 | Tenue de marché | ici | Avellaneda-Stoikov, Guéant-Lehalle-Fernandez-Tapia, markouts |
 

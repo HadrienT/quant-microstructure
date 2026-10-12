@@ -34,8 +34,8 @@ section à jour à chaque lot livré.
 | M1 — Capture | **à faire, dans `data-ingest`**. Stockage décidé (ADR-015) : événements bruts en fichiers binaires de taille fixe, au format de l'ADR-007 ; catalogue et agrégats dans une base de séries temporelles, calculés depuis les fichiers. Restent à choisir la place, les paires, la rétention et la compression. C'est le lot qui débloque tout le reste : mesures, calibrage, backtest sur données |
 
 Trois constats à ne pas oublier, consignés dans les ADR et les issues :
-la loi en racine carrée n'est pas reproduite par l'intelligence zéro (#15,
-ADR-012) ; plusieurs formules ont été codées d'après une dérivation, faute
+la loi en racine carrée n'est pas reproduite par l'intelligence zéro, et le
+dépôt ne la vérifie donc pas (§5.4 du compagnon, ADR-012) ; plusieurs formules ont été codées d'après une dérivation, faute
 d'accès à l'article (#16) ; le P&L d'un teneur de marché dans l'intelligence
 zéro ne dit rien d'un marché réel (ADR-014).
 
