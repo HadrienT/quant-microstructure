@@ -31,7 +31,7 @@ section à jour à chaque lot livré.
 | M6 — Impact | livré : `impact/` (propagateur, lambda de Kyle, impact d'un métaordre en simulateur, coût d'un aller-retour) et `sim/order_splitting` (signes à mémoire longue). **La loi en racine carrée n'est pas reproduite** par l'intelligence zéro : ADR-012 |
 | M7 — Exécution | livré : `execution/` (Almgren-Chriss discret, TWAP, VWAP, POV, exécuteur d'échéancier dans le backtest, déficit d'exécution). Limites : ADR-013 |
 | M8 — Tenue de marché | livré : `mm/` (Avellaneda-Stoikov, Guéant-Lehalle-Fernandez-Tapia exact et approché, teneur de marché pour le backtest, décomposition du P&L, markouts). Ce que vaut le résultat : ADR-014 |
-| M1 — Capture | **à faire, dans `data-ingest`** (ADR-004 toujours ouverte). C'est le lot qui débloque tout le reste : mesures, calibrage, backtest sur données |
+| M1 — Capture | **à faire, dans `data-ingest`**. Stockage décidé (ADR-015) : événements bruts en fichiers binaires de taille fixe, au format de l'ADR-007 ; catalogue et agrégats dans une base de séries temporelles, calculés depuis les fichiers. Restent à choisir la place, les paires, la rétention et la compression. C'est le lot qui débloque tout le reste : mesures, calibrage, backtest sur données |
 
 Trois constats à ne pas oublier, consignés dans les ADR et les issues :
 la loi en racine carrée n'est pas reproduite par l'intelligence zéro (#15,
