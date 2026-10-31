@@ -11,8 +11,7 @@ It is built around the three questions of the field:
 | What does a trade cost? | Market impact (response function, propagator, square-root law), optimal execution (Almgren-Chriss, TWAP, VWAP, POV), transaction cost analysis |
 | What does quoting earn? | Market making (Avellaneda-Stoikov, Guéant-Lehalle-Fernandez-Tapia), markouts, a book-level backtest with latency and queue position |
 
-**Status: every model is written and tested on simulated markets; none has
-seen real data.** Work packages M0 (build chain) and M2 to M8 are done:
+## What is built
 
 - integer types and the single event format, an event file reader and writer
   with gap detection;
@@ -37,11 +36,14 @@ seen real data.** Work packages M0 (build chain) and M2 to M8 are done:
   quotes, a market maker for the backtest, P&L decomposition and markouts;
 - all of it available from Python.
 
-**Nothing has been measured on real data yet, and no parameter is
-calibrated.** The capture of a real order book feed (work package M1, in
-`data-ingest`) is the missing piece. One expected result is **not** obtained: the
-zero-intelligence simulator does not reproduce the square-root law of
-metaorder impact (see ADR-012 in `blueprint/decisions.md`).
+## Status
+
+**Every model is tested on simulated markets, and no parameter is calibrated
+yet.** `data-ingest` has been recording Bitstamp's BTC/USD order-by-order feed
+since October 2026 in the format this library replays; calibrating on it is the
+next step. One expected result is **not** obtained: the zero-intelligence
+simulator does not reproduce the square-root law of metaorder impact (see
+ADR-012 in [`blueprint/decisions.md`](blueprint/decisions.md)).
 
 **This is a study repository, not a trading system.** It never connects to an
 exchange to send an order.
@@ -62,7 +64,6 @@ exchange to send an order.
 | [`docs/companion.md`](docs/companion.md) | Reading companion and specification (in French): the theory with formulas and references, the architecture, the work packages, the property tests, the state of the data |
 | [`blueprint/README.md`](blueprint/README.md) | Work packages and their dependency graph |
 | [`blueprint/decisions.md`](blueprint/decisions.md) | Architecture decisions, with the alternatives rejected |
-| [`CLAUDE.md`](CLAUDE.md) | Working notes for Claude Code sessions |
 
 ## Build
 
