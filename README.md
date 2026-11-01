@@ -3,6 +3,8 @@
 A study of market microstructure in C++20: how a price forms in a limit order
 book, what a trade costs, and what quoting earns.
 
+**[How it works: interactive map](https://hadrient.github.io/atlas-pages/quant-microstructure/)**
+
 It is built around the three questions of the field:
 
 | Question | What is built |
